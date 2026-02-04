@@ -54,18 +54,18 @@ class YamlToNsisConverter:
             f'InstallDir "{self._replace_variables(self.config.install.install_dir)}"',
             'InstallDirRegKey HKLM "${REG_KEY}" "InstallPath"',
             'RequestExecutionLevel admin',
-            "",
         ]
         
         # Add icon if specified
         if self.config.app.icon:
-            lines.insert(-1, f'Icon "{self.config.app.icon}"')
-            lines.insert(-1, f'UninstallIcon "{self.config.app.icon}"')
+            lines.append(f'Icon "{self.config.app.icon}"')
+            lines.append(f'UninstallIcon "{self.config.app.icon}"')
         
         # Add license if specified
         if self.config.app.license:
-            lines.insert(-1, f'LicenseData "{self.config.app.license}"')
+            lines.append(f'LicenseData "${{LICENSE_FILE}}"')
         
+        lines.append("")
         return lines
     
     def _generate_modern_ui(self) -> List[str]:
