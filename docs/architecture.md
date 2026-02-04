@@ -51,7 +51,6 @@ flowchart LR
   style End fill:#bfb,stroke:#333,stroke-width:1px
   style Makensis fill:#ffdf80,stroke:#333,stroke-width:1px
 ```
-```
 
 ---
 

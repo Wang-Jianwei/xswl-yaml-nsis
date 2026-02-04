@@ -108,7 +108,7 @@ update:
             
             # Verify all features are present
             self.assertIn("CompleteTest", nsis_script)
-            self.assertIn("Icon", nsis_script)
+            self.assertIn("MUI_ICON", nsis_script)  # Changed from "Icon" to "MUI_ICON" (MUI2 standard)
             self.assertIn("LicenseData", nsis_script)
             self.assertIn("!finalize", nsis_script)  # Signing
             self.assertIn("UPDATE_URL", nsis_script)  # Update config

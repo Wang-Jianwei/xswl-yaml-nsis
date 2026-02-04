@@ -2,7 +2,11 @@
 Configuration parser for YAML packaging configuration
 """
 
-import yaml
+try:
+    import yaml
+except ImportError as e:
+    raise ImportError("PyYAML is required. Install with: pip install PyYAML  OR pip install -r requirements.txt") from e
+
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 
@@ -66,6 +70,73 @@ class FileEntry:
 
 
 @dataclass
+class PackageEntry:
+    """Package/Component entry for modular installation"""
+    name: str
+    sources: List[Dict[str, str]]  # List of {source, destination} dicts
+    recursive: bool = True
+    optional: bool = False
+    default: bool = True
+    description: str = ""
+    children: List["PackageEntry"] = field(default_factory=list)
+    
+    @classmethod
+    def from_dict(cls, name: str, data: Dict[str, Any]) -> "PackageEntry":
+        # Handle nested children (SectionGroup)
+        children_data = data.get("children", {})
+        children_list: List[PackageEntry] = []
+        if isinstance(children_data, dict):
+            for child_name, child_data in children_data.items():
+                if isinstance(child_data, dict):
+                    children_list.append(PackageEntry.from_dict(child_name, child_data))
+
+        # Handle sources as list of dicts or convert from old format
+        sources_data = data.get("sources", data.get("source", []))
+        sources_list = []
+        
+        if isinstance(sources_data, str):
+            # Single source string (old format)
+            sources_list = [{
+                "source": sources_data,
+                "destination": data.get("destination", "$INSTDIR")
+            }]
+        elif isinstance(sources_data, list):
+            # List format - can be strings or dicts
+            for item in sources_data:
+                if isinstance(item, str):
+                    # String source with package-level destination
+                    sources_list.append({
+                        "source": item,
+                        "destination": data.get("destination", "$INSTDIR")
+                    })
+                elif isinstance(item, dict):
+                    # Dict with source possibly being a string or a list of strings
+                    src = item.get("source", "")
+                    dest = item.get("destination", data.get("destination", "$INSTDIR"))
+                    if isinstance(src, list):
+                        for s in src:
+                            sources_list.append({
+                                "source": s,
+                                "destination": dest
+                            })
+                    else:
+                        sources_list.append({
+                            "source": src,
+                            "destination": dest
+                        })
+        
+        return cls(
+            name=name,
+            sources=sources_list,
+            recursive=data.get("recursive", True),
+            optional=data.get("optional", False),
+            default=data.get("default", True),
+            description=data.get("description", ""),
+            children=children_list,
+        )
+
+
+@dataclass
 class SigningConfig:
     """Code signing configuration"""
     enabled: bool = False
@@ -105,6 +176,7 @@ class PackageConfig:
     app: AppInfo
     install: InstallConfig
     files: List[FileEntry] = field(default_factory=list)
+    packages: List[PackageEntry] = field(default_factory=list)
     signing: Optional[SigningConfig] = None
     update: Optional[UpdateConfig] = None
     custom_nsis_includes: List[str] = field(default_factory=list)
@@ -119,6 +191,8 @@ class PackageConfig:
             app=AppInfo.from_dict(data.get("app", {})),
             install=InstallConfig.from_dict(data.get("install", {})),
             files=[FileEntry.from_dict(f) for f in data.get("files", [])],
+            packages=[PackageEntry.from_dict(name, pkg_data) 
+                     for name, pkg_data in data.get("packages", {}).items()],
             signing=SigningConfig.from_dict(data["signing"]) if "signing" in data else None,
             update=UpdateConfig.from_dict(data["update"]) if "update" in data else None,
             custom_nsis_includes=data.get("custom_nsis_includes", [])
@@ -131,6 +205,8 @@ class PackageConfig:
             app=AppInfo.from_dict(data.get("app", {})),
             install=InstallConfig.from_dict(data.get("install", {})),
             files=[FileEntry.from_dict(f) for f in data.get("files", [])],
+            packages=[PackageEntry.from_dict(name, pkg_data) 
+                     for name, pkg_data in data.get("packages", {}).items()],
             signing=SigningConfig.from_dict(data["signing"]) if "signing" in data else None,
             update=UpdateConfig.from_dict(data["update"]) if "update" in data else None,
             custom_nsis_includes=data.get("custom_nsis_includes", [])

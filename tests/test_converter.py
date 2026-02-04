@@ -3,7 +3,7 @@ Unit tests for xswl-yaml-nsis NSIS converter
 """
 
 import unittest
-from xswl_yaml_nsis.config import PackageConfig, AppInfo, InstallConfig, FileEntry
+from xswl_yaml_nsis.config import PackageConfig, AppInfo, InstallConfig, FileEntry, PackageEntry
 from xswl_yaml_nsis.converter import YamlToNsisConverter
 
 
@@ -99,6 +99,103 @@ class TestYamlToNsisConverter(unittest.TestCase):
         converter = YamlToNsisConverter(self.simple_config)
         section = converter._generate_update_section()
         self.assertEqual(len(section), 0)
+    
+    def test_packages_without_components(self):
+        """Test that converter works without packages (backward compatible)"""
+        converter = YamlToNsisConverter(self.simple_config)
+        script = converter.convert()
+        # Should NOT have MUI_PAGE_COMPONENTS when packages is empty
+        self.assertNotIn("MUI_PAGE_COMPONENTS", script)
+    
+    def test_package_sections_generation(self):
+        """Test generation of package sections"""
+        config = PackageConfig(
+            app=AppInfo(name="ModularApp", version="2.0.0"),
+            install=InstallConfig(),
+            files=[],
+            packages=[
+                PackageEntry(
+                    name="app",
+                    sources=[{"source": "app/*", "destination": "$INSTDIR"}],
+                    optional=False,
+                    default=True,
+                    description="Main Application"
+                ),
+                PackageEntry(
+                    name="PXI_driver",
+                    sources=[{"source": "pxi/*", "destination": "$INSTDIR\\drivers\\PXI"}],
+                    optional=True,
+                    default=False,
+                    description="PXI Driver"
+                )
+            ]
+        )
+        
+        converter = YamlToNsisConverter(config)
+        script = converter.convert()
+        
+        # Should have components page
+        self.assertIn("MUI_PAGE_COMPONENTS", script)
+        # Should have package sections with package names (keys)
+        self.assertIn('Section "app"', script)
+        self.assertIn('Section "PXI_driver"', script)
+        # Should have file directives (normalized paths)
+        self.assertIn(f'File /r "{converter._normalize_path("app/*")}"', script)
+        self.assertIn(f'File /r "{converter._normalize_path("pxi/*")}"', script)
+        # Should have destination paths
+        self.assertIn('SetOutPath "$INSTDIR"', script)
+        self.assertIn('SetOutPath "$INSTDIR\\drivers\\PXI"', script)
+
+    def test_package_source_as_list(self):
+        """Test package sources where a source entry's source is a list"""
+        config = PackageConfig(
+            app=AppInfo(name="MultiSrcApp", version="1.2.3"),
+            install=InstallConfig(),
+            files=[],
+            packages=[
+                PackageEntry(
+                    name="multi",
+                    sources=[
+                        {"source": ["a/*", "b/*"], "destination": "$INSTDIR\\data"}
+                    ],
+                    optional=False
+                )
+            ]
+        )
+        
+        converter = YamlToNsisConverter(config)
+        script = converter.convert()
+        self.assertIn(f'File /r "{converter._normalize_path("a/*")}"', script)
+        self.assertIn(f'File /r "{converter._normalize_path("b/*")}"', script)
+        self.assertIn('SetOutPath "$INSTDIR\\data"', script)
+
+    def test_package_groups_generation(self):
+        """Test generation of SectionGroup for nested packages"""
+        config = PackageConfig(
+            app=AppInfo(name="GroupedApp", version="1.0.0"),
+            install=InstallConfig(),
+            files=[],
+            packages=[
+                PackageEntry(
+                    name="Drivers",
+                    sources=[],
+                    children=[
+                        PackageEntry(
+                            name="PXI_driver",
+                            sources=[{"source": "pxi/*", "destination": "$INSTDIR\\drivers\\PXI"}],
+                            optional=True,
+                            default=False,
+                        )
+                    ]
+                )
+            ]
+        )
+
+        converter = YamlToNsisConverter(config)
+        script = converter.convert()
+
+        self.assertIn('SectionGroup "Drivers"', script)
+        self.assertIn('Section "PXI_driver"', script)
 
 
 if __name__ == '__main__':

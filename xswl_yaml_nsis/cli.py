@@ -57,6 +57,8 @@ def main():
         if args.verbose:
             print(f"Loading configuration from {args.config}...")
         config = PackageConfig.from_yaml(args.config)
+        # Record config directory so converter can resolve relative paths from YAML file location
+        config._config_dir = os.path.dirname(os.path.abspath(args.config))
         
         # Convert to NSIS
         if args.verbose:
