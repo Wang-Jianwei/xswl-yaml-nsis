@@ -1,0 +1,52 @@
+# Example YAML configuration for xswl-yaml-nsis
+# This demonstrates all available options
+
+# Application information
+app:
+  name: "MyApplication"
+  version: "1.0.0"
+  publisher: "My Company"
+  description: "A sample application installer"
+  icon: "app.ico"  # Optional: path to application icon
+  license: "LICENSE.txt"  # Optional: path to license file
+
+# Installation configuration
+install:
+  install_dir: "$PROGRAMFILES64\\${APP_NAME}"  # Default installation directory
+  create_desktop_shortcut: true  # Create desktop shortcut
+  create_start_menu_shortcut: true  # Create start menu shortcuts
+  registry_key: "Software\\${APP_NAME}"  # Registry key for app settings
+
+# Files to include in the installer
+files:
+  # Simple file entry (string)
+  - "MyApplication.exe"
+  
+  # File with custom destination
+  - source: "config.json"
+    destination: "$INSTDIR"
+    recursive: false
+  
+  # Recursive directory inclusion
+  - source: "resources/*"
+    destination: "$INSTDIR\\resources"
+    recursive: true
+
+# Optional: Code signing configuration
+signing:
+  enabled: false
+  certificate: "path/to/certificate.pfx"
+  password: "certificate_password"
+  timestamp_url: "http://timestamp.digicert.com"
+
+# Optional: Auto-update configuration
+update:
+  enabled: false
+  update_url: "https://example.com/updates/latest.json"
+  check_on_startup: true
+
+# Optional: Custom NSIS includes
+# Include additional NSIS scripts for advanced customization
+custom_nsis_includes:
+  # - "custom_functions.nsh"
+  # - "extra_pages.nsh"

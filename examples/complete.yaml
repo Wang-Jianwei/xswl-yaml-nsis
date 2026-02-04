@@ -1,0 +1,43 @@
+# Complete example demonstrating all features
+
+app:
+  name: "AdvancedApp"
+  version: "2.0.1"
+  publisher: "Advanced Software Inc."
+  description: "Advanced application with all features enabled"
+  icon: "resources/app.ico"
+  license: "LICENSE.txt"
+
+install:
+  install_dir: "$PROGRAMFILES64\\${APP_NAME}"
+  create_desktop_shortcut: true
+  create_start_menu_shortcut: true
+  registry_key: "Software\\${APP_NAME}"
+
+files:
+  - "AdvancedApp.exe"
+  - "README.txt"
+  - source: "lib/*.dll"
+    destination: "$INSTDIR\\lib"
+    recursive: false
+  - source: "resources/*"
+    destination: "$INSTDIR\\resources"
+    recursive: true
+  - source: "plugins/*"
+    destination: "$INSTDIR\\plugins"
+    recursive: true
+
+signing:
+  enabled: true
+  certificate: "certs/codesign.pfx"
+  password: "your_secure_password"
+  timestamp_url: "http://timestamp.digicert.com"
+
+update:
+  enabled: true
+  update_url: "https://example.com/api/updates/latest"
+  check_on_startup: true
+
+custom_nsis_includes:
+  - "includes/custom_dialogs.nsh"
+  - "includes/advanced_functions.nsh"

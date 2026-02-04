@@ -1,0 +1,15 @@
+# Simple example for a basic application
+
+app:
+  name: "SimpleApp"
+  version: "1.0.0"
+  publisher: "Example Publisher"
+  description: "A simple demonstration application"
+
+install:
+  install_dir: "$PROGRAMFILES64\\${APP_NAME}"
+  create_desktop_shortcut: true
+  create_start_menu_shortcut: true
+
+files:
+  - "SimpleApp.exe"
