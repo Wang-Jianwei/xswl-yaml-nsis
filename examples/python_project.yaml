@@ -1,0 +1,22 @@
+# Python Project Example (PyInstaller output)
+
+app:
+  name: MyPythonApp
+  version: "2.1.0"
+  publisher: Python Developer
+  description: A Python application packaged with PyInstaller
+  icon: dist/app.ico
+
+install:
+  install_dir: $LOCALAPPDATA\\${APP_NAME}
+  create_desktop_shortcut: true
+  create_start_menu_shortcut: true
+
+files:
+  # PyInstaller executable
+  - dist/MyPythonApp.exe
+  
+  # Support files from PyInstaller
+  - source: dist/_internal/*
+    destination: $INSTDIR\\_internal
+    recursive: true

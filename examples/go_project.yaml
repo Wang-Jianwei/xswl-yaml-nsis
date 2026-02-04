@@ -1,0 +1,26 @@
+# Go Project Example
+
+app:
+  name: MyGoApp
+  version: "1.5.0"
+  publisher: Go Developer
+  description: A Go application installer
+  icon: assets/logo.ico
+
+install:
+  install_dir: $PROGRAMFILES64\\${APP_NAME}
+  create_desktop_shortcut: true
+  create_start_menu_shortcut: true
+
+files:
+  # Go binary
+  - build/MyGoApp.exe
+  
+  # Configuration
+  - config.yaml
+  - .env.example
+  
+  # Static assets
+  - source: static/*
+    destination: $INSTDIR\\static
+    recursive: true
