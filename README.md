@@ -14,7 +14,7 @@ A lightweight Windows packaging tool, similar to Electron-Builder.
 
 ## 工作流程 / Workflow
 
-```
+```js
 YAML 配置 → Python 转换器 → NSIS 脚本 → makensis → Windows 安装包
 YAML Config → Python Converter → NSIS Script → makensis → Windows Installer
 ```
