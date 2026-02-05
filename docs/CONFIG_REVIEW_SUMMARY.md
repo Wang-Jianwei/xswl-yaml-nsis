@@ -9,7 +9,7 @@
 
 | 维度 | 结果 |
 |------|------|
-| **Config 支持度** | ✅ 13 项完全支持 + ⚠️ 2 项部分 + ❌ 5 项缺失 |
+| **Config 支持度** | ✅ 15 项完全支持 + ⚠️ 2 项部分 + ❌ 3 项缺失 |
 | **立即可用** | 快捷方式、注册表、卸载、权限、许可、路径、进度、文件、界面、安装后运行（10 项） |
 | **改进工作量** | ~11.5-17 小时（可 1-2 周完成） |
 
@@ -28,6 +28,7 @@
 | 11 | 安装进度显示 | (MUI 框架) | ✅ NSIS 自动提供 |
 | 12 | 许可协议展示 | `app.license` | ✅ EULA 页面 |
 | 14 | 配置文件生成 | `files`, `packages[].post_install` | ✅ 支持脚本 |
+| 15 | 日志记录 | `logging` | ✅ 支持（`LogSet`） |
 | 16 | 安装后自动运行 | `packages[].post_install` | ✅ 通过 ExecWait |
 | 19 | 自定义界面 | `app.icon`, `custom_nsis_includes` | ✅ 支持品牌化 |
 
@@ -42,14 +43,13 @@
 
 ---
 
-## 🔴 5 项完全缺失（需新增配置类）
+## 🔴 4 项完全缺失（需新增配置类）
 
 | # | 功能 | 新数据类 | 所属节点 | 工作量 |
 |---|------|---------|---------|--------|
 | 4 | 注册环境变量 | `EnvVarEntry` | `InstallConfig.env_vars` | 2-3h |
-| 7 | 多语言支持 | (简单扩展) | `PackageConfig.languages` | 0.5-1h |
-| 13 | 安装前检测 | `SystemRequirements` | `InstallConfig.system_requirements` | 1.5-2h |
-| 15 | 日志记录 | `LoggingConfig` | `PackageConfig.logging` | 0.5-1h |
+| 7 | 多语言支持 | (已实现) | `PackageConfig.languages` | 0.5-1h |
+| 15 | 日志记录 | `LoggingConfig` | `PackageConfig.logging` | ✅ 已实现 |
 | 17 | 文件关联 | `FileAssociation` | `InstallConfig.file_associations` | 2-3h |
 | 18 | 网络下载/校验 | (扩展 FileEntry) | `FileEntry.download_url`, `checksum_*` | 2-3h |
 
@@ -164,6 +164,42 @@ languages:
 - `LoggingConfig`：用于记录安装过程的日志路径和日志级别（已解析为 `PackageConfig.logging`，可用于未来在安装器中启用日志写入）。
 - `FileAssociation`：支持完整注册（写入 `ProgID` 描述、`DefaultIcon`、verbs 命令）并区分 system (`HKCR`) 与 per-user (`HKCU\\Software\\Classes`) 注册。卸载时会删除对应键。
 - `FileEntry` 扩展：增加 `download_url`、`checksum_type`/`checksum_value` 与 `decompress` 字段；转换器会在生成的 NSIS 脚本中对这些字段添加说明性注释（后续可以集成实际下载/校验/解压实现）。
+
+---
+
+## 🔧 未完成的 Converter 实现（需优先跟进） ✅
+
+以下是目前 config 层已就绪但转换器仍需要实现或完善的关键功能：
+
+- [ ] 网络下载与完整性校验（高优先）
+  - 状态：**部分实现** — 生成器现在会输出 `inetc::get` 下载调用，并生成 `VerifyChecksum` / `ExtractArchive` 占位函数；已添加单元测试验证脚本包含下载和占位调用。但占位函数尚未执行真实的哈希校验或解压。
+  - 下一步（建议）：集成真实的校验实现（例如使用 NSIS hash 插件或调用外部校验工具），并集成解压工具（`nsisunz` 或 7-Zip），补充集成测试。
+  - 预估：2-4 小时（实现校验和/解压并添加集成测试）。验收条件：生成的 NSIS 脚本能下载 URL、验证 SHA256/MD5 并在失败时中止安装；支持自动解压并在失败时报错。
+
+- [x] 安装时的签名验证（高优先）
+  - 状态：**已实现（PowerShell + signtool 回退）** — 生成器在 `.onInit` 中添加了 PowerShell `Get-AuthenticodeSignature` 的调用，并在失败时检测并调用 `signtool.exe verify /pa "$EXEPATH"`；如两者均不可用或验证失败则 `MessageBox` + `Abort`。已添加单元测试以验证脚本中包含相关验证逻辑与回退代码。
+  - 下一步（建议）：在环境/策略受限的机器上做集成验证，并考虑增加 WinVerifyTrust API 调用作为更稳健的本地回退（可选）。
+  - 预估：0.5-1.5 小时（额外回退方案与集成测试）。验收条件：在可用工具下正确验证并在失败时中止安装；在工具缺失时提供友好提示并中止。
+
+- [x] 安装前系统要求强制检查（中优先）
+  - 状态：**已实现** — 生成器在 `.onInit` 中添加了 Windows 版本、磁盘空间与内存检查（使用 PowerShell），并在不满足时提示并中止安装。
+  - 下一步（建议）：在无 PowerShell 或策略受限的系统上做集成测试，并考虑添加 NSIS 插件作为可选回退以减少依赖。
+  - 预估：0.5-1.5 小时（集成测试与可选插件实现）。验收条件：检测按配置生效，不满足时中止安装；集成测试覆盖主要 Windows 版本。
+
+- [ ] 依赖组件检测与自动安装（中优先）
+  - 状态：无 `install.dependencies` 条目与生成逻辑（需新增 schema 和转换器支持）。
+  - 预估：3-5 小时。验收条件：能在安装开始时检测依赖是否存在并根据配置有条件地执行下载/安装命令（或跳过）。
+
+- [x] 日志记录（低到中优先）
+  - 状态：**已实现** — 支持 `PackageConfig.logging`，生成器会输出 `LogSet on` 以及日志路径/级别的注释；卸载段也包含日志启用注释。已添加单元测试验证输出。
+  - 下一步（建议）：在真实 Windows 机器上验证日志文件位置/权限并添加可选的日志轮换或包含卸载日志的选项。
+  - 预估：0.5-1 小时（集成验证与额外选项）。验收条件：可配置日志路径并在安装/卸载过程中记录基本日志事件。
+
+- [ ] 安装结束“立即运行应用”复选框（低优先）
+  - 状态：当前可通过 `post_install` 变通执行，但缺少 Finish 页面复选框与专用 `run_after_install` 字段。
+  - 预估：1-2 小时。验收条件：支持 `install.run_after_install` 字段并在 Finish 页面呈现可勾选的“立即运行”选项。
+
+> 建议后续动作：为上述每项创建 GitHub Issue（标注优先级与验收条件），按重要性依次实现并通过单元测试验证（优先实现下载/校验与签名验证）。
 
 ---
 

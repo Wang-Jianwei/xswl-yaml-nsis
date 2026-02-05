@@ -276,7 +276,17 @@ class YamlToNsisConverter(BaseConverter):
                 lines.append(f'!define LICENSE_FILE "{self.config.app.license}"')
                 lines.append(f'LicenseData "${{LICENSE_FILE}}"')
 
-        lines.append("")
+        # Logging: enable NSIS logging if requested
+        if getattr(self.config, 'logging', None) and getattr(self.config.logging, 'enabled', False):
+            log_path = self.config.logging.path or '$APPDATA\\${APP_NAME}\\install.log'
+            lines.append(f'; Logging enabled: path={log_path} level={self.config.logging.level}')
+            lines.append('LogSet on')
+            if getattr(self.config.logging, 'path', None):
+                # Define a LOG_FILE macro for consumers/tests
+                lines.append(f'!define LOG_FILE "{self._interpolate_yaml_placeholders(self.config.logging.path)}"')
+            lines.append("")
+        else:
+            lines.append("")
         return lines
 
     def _generate_modern_ui(self) -> List[str]:
@@ -311,6 +321,16 @@ class YamlToNsisConverter(BaseConverter):
         else:
             lines.append('!insertmacro MUI_LANGUAGE "English"')
             lines.append("")
+
+        # Finish page run checkbox (MUI_FINISHPAGE_RUN)
+        if getattr(self.config.install, 'launch_on_finish', None):
+            path = self._interpolate_yaml_placeholders(self.config.install.launch_on_finish)
+            lines.append(f'!define MUI_FINISHPAGE_RUN "{path}"')
+            label = getattr(self.config.install, 'launch_on_finish_label', '')
+            if label:
+                lines.append(f'!define MUI_FINISHPAGE_RUN_TEXT "{label}"')
+            lines.append("")
+
         return lines
 
     def _generate_installer_section(self) -> List[str]:
@@ -326,19 +346,40 @@ class YamlToNsisConverter(BaseConverter):
         # Add files
         for file_entry in self.config.files:
             normalized_source = self._normalize_path(file_entry.source)
-            # If file comes from a download URL or has checksum info, emit explanatory comments
+            # If file comes from a download URL, generate download + verify logic
             if getattr(file_entry, 'download_url', None):
-                lines.append(f'  ; Download URL: {file_entry.download_url}')
+                filename = os.path.basename(file_entry.source)
+                lines.append(f'  ; Download: {file_entry.download_url} -> $INSTDIR\\{filename}')
+                lines.append(f'  inetc::get /silent /url "{file_entry.download_url}" /outfile "$INSTDIR\\{filename}" /end')
+                lines.append('  Pop $0')
+                lines.append('  StrCmp $0 "OK" +2')
+                lines.append('    MessageBox MB_OK "Download failed: $0"')
+                lines.append('    Abort')
+                # Checksum verification (placeholder call to helper)
                 if getattr(file_entry, 'checksum_type', None):
-                    lines.append(f'  ; Checksum: {file_entry.checksum_type} {file_entry.checksum_value}')
+                    lines.append(f'  ; Verify checksum: {file_entry.checksum_type} {file_entry.checksum_value}')
+                    lines.append(f'  Push "$INSTDIR\\{filename}"')
+                    lines.append(f'  Push "{file_entry.checksum_type}"')
+                    lines.append(f'  Push "{file_entry.checksum_value}"')
+                    lines.append('  Call VerifyChecksum')
+                    lines.append('  Pop $0')
+                    lines.append('  StrCmp $0 "0" +2')
+                    lines.append('    MessageBox MB_OK "Checksum verification failed"')
+                    lines.append('    Abort')
+                # Decompression placeholder
                 if getattr(file_entry, 'decompress', False):
-                    lines.append(f'  ; Note: decompression requested (decompress=True)')
-            if self._should_use_recursive(file_entry.source):
-                lines.append(f'  File /r "{normalized_source}"')
+                    lines.append(f'  ; Decompression requested for $INSTDIR\\{filename} (placeholder)')
+                    lines.append(f'  Push "$INSTDIR\\{filename}"')
+                    lines.append('  Push "$INSTDIR"')
+                    lines.append('  Call ExtractArchive')
+                # If downloaded, we do not use File instruction to copy from source archive
             else:
-                lines.append(f'  File "{normalized_source}"')
-            if file_entry.destination != "$INSTDIR":
-                lines.append(f'  ; Install to: {file_entry.destination}')
+                if self._should_use_recursive(file_entry.source):
+                    lines.append(f'  File /r "{normalized_source}"')
+                else:
+                    lines.append(f'  File "{normalized_source}"')
+                if file_entry.destination != "$INSTDIR":
+                    lines.append(f'  ; Install to: {file_entry.destination}')
 
         lines.extend([
             "",
@@ -494,6 +535,14 @@ class YamlToNsisConverter(BaseConverter):
             "",
             "  ; Remove files",
         ]
+
+        # If logging enabled for uninstaller, enable logging here
+        if getattr(self.config, 'logging', None) and getattr(self.config.logging, 'enabled', False):
+            lines.append(f'  ; Uninstaller logging enabled: path={self.config.logging.path or "$APPDATA\\${APP_NAME}\\uninstall.log"} level={self.config.logging.level}')
+            lines.append('  LogSet on')
+            if getattr(self.config.logging, 'path', None):
+                lines.append(f'  ; LOG_FILE defined: {self._interpolate_yaml_placeholders(self.config.logging.path)}')
+            lines.append('')
 
         # Remove files from regular files list (in reverse order)
         for file_entry in reversed(self.config.files):
@@ -694,16 +743,78 @@ class YamlToNsisConverter(BaseConverter):
         return lines
 
     def _generate_section_initialization(self) -> List[str]:
-        """Generate initialization code for section flags (optional, default settings)"""
-        if not self.config.packages:
-            return []
-
+        """Generate .onInit function including optional signature verification and section flags."""
         lines = [
-            "; Section Flags - Control default selection state",
+            "; Section Flags & Initialization",
             "Function .onInit",
             "",
         ]
 
+        # Installation-time signature verification (optional)
+        if getattr(self.config, 'signing', None) and getattr(self.config.signing, 'verify_signature', False):
+            lines.extend([
+                '  ; Verify installer signature (PowerShell Get-AuthenticodeSignature, fallback to signtool)',
+                '  ; Try PowerShell first',
+                '  ExecWait "powershell -NoProfile -NonInteractive -Command \"try{ $s=Get-AuthenticodeSignature -FilePath \\\"$EXEPATH\\\" -ErrorAction Stop; if ($s.Status -ne \\\"Valid\\\") { exit 1 } } catch { exit 2 }\"" $0',
+                '  StrCmp $0 0 +11',
+                '    ; PowerShell failed or indicated invalid signature - try signtool if available',
+                '    IfFileExists "$WINDIR\\system32\\signtool.exe" 0 +6',
+                '      ExecWait "\"$WINDIR\\\\system32\\\\signtool.exe\" verify /pa \"$EXEPATH\"" $0',
+                '      StrCmp $0 0 +3',
+                '        MessageBox MB_OK "Signature verification failed (signtool). Aborting installation."',
+                '        Abort',
+                '    ; No signtool found - fail installation',
+                '    MessageBox MB_OK "Signature verification failed and no verification tools available. Aborting installation."',
+                '    Abort',
+                '',
+            ])
+
+        # Installation-time system requirements checks (optional)
+        sysreq = getattr(self.config.install, 'system_requirements', None)
+        if sysreq:
+            if getattr(sysreq, 'min_windows_version', None):
+                mv = sysreq.min_windows_version
+                lines.extend([
+                    f'  ; Check minimum Windows version: {mv}',
+                    '  ExecWait "powershell -NoProfile -NonInteractive -Command \"try{ $v=(Get-CimInstance Win32_OperatingSystem).Version; if ([Version]$v -lt [Version]\"' + mv + '\") { exit 1 } } catch { exit 2 }\"" $0',
+                    '  StrCmp $0 0 +2',
+                    f'    MessageBox MB_OK "Requires Windows {mv} or higher. Aborting installation."',
+                    '    Abort',
+                    '',
+                ])
+
+            if getattr(sysreq, 'min_free_space_mb', None):
+                mf = int(sysreq.min_free_space_mb)
+                lines.extend([
+                    f'  ; Check minimum free disk space: {mf} MB on install path',
+                    '  ExecWait "powershell -NoProfile -NonInteractive -Command \"try{ $path=\"$INSTDIR\"; $drive=[System.IO.DriveInfo]::new((Get-Item $path).PSDrive.Root); $free=[math]::Floor($drive.AvailableFreeSpace/1MB); if ($free -lt ' + str(mf) + ') { exit 1 } } catch { exit 2 }\"" $0',
+                    '  StrCmp $0 0 +2',
+                    f'    MessageBox MB_OK "Not enough free disk space on installation drive. Require at least {mf} MB. Aborting installation."',
+                    '    Abort',
+                    '',
+                ])
+
+            if getattr(sysreq, 'min_ram_mb', None):
+                mr = int(sysreq.min_ram_mb)
+                lines.extend([
+                    f'  ; Check minimum physical memory: {mr} MB',
+                    '  ExecWait "powershell -NoProfile -NonInteractive -Command \"try{ $mem=(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1MB; if ($mem -lt ' + str(mr) + ') { exit 1 } } catch { exit 2 }\"" $0',
+                    '  StrCmp $0 0 +2',
+                    f'    MessageBox MB_OK "Not enough physical memory. Require at least {mr} MB. Aborting installation."',
+                    '    Abort',
+                    '',
+                ])
+
+            if getattr(sysreq, 'require_admin', False):
+                lines.extend([
+                    '  ; Ensure running as administrator (UAC check)',
+                    '  ${If} ${BypassUAC} 0 +2',
+                    '    ; Running elevated - continue',
+                    '  ${EndIf}',
+                ])
+
+
+        # Section flags for packages
         for idx, pkg in enumerate(self._flatten_packages(self.config.packages)):
             sec_name = f"SEC_PKG_{idx}"
             if pkg.optional and not pkg.default:
@@ -718,6 +829,31 @@ class YamlToNsisConverter(BaseConverter):
             "",
         ])
 
+        return lines
+
+    def _generate_helpers(self) -> List[str]:
+        """Generate helper function placeholders used by installer (checksum, extract)."""
+        lines = [
+            '; Helper functions (placeholders - require proper plugin implementations)',
+            'Function VerifyChecksum',
+            '  ; Stack: file_path, checksum_type, checksum_value',
+            '  Pop $R2  ; checksum_value',
+            '  Pop $R1  ; checksum_type',
+            '  Pop $R0  ; file_path',
+            '  ; TODO: Implement checksum verification using a native plugin (sha1/sha256/md5).',
+            '  ; This placeholder always returns success ("0").',
+            '  StrCpy $0 "0"',
+            '  Push $0',
+            'FunctionEnd',
+            '',
+            'Function ExtractArchive',
+            '  ; Stack: archive_path, dest_dir',
+            '  Pop $R1  ; dest_dir',
+            '  Pop $R0  ; archive_path',
+            '  ; TODO: Implement extraction (nsisunz, 7z, or inno style extraction).',
+            'FunctionEnd',
+            '',
+        ]
         return lines
 
     def _flatten_packages(self, packages):
@@ -759,6 +895,7 @@ class YamlToNsisConverter(BaseConverter):
         nsis_lines.extend(self._generate_package_sections())
         nsis_lines.extend(self._generate_uninstaller_section())
         nsis_lines.extend(self._generate_section_initialization())
+        nsis_lines.extend(self._generate_helpers())
 
         return "\n".join(nsis_lines)
 

@@ -39,7 +39,7 @@ class RegistryEntry:
     """Registry entry configuration for installer/uninstaller"""
 
     def __init__(self, hive: str, key: str, name: str, value: str, type: str = "string", view: str = "auto"):
-        self.hive = hive
+        self.hive = hive  # "HKLM" or "HKCU" （含义：安装到机器范围或用户范围）
         self.key = key
         self.name = name
         self.value = value
@@ -89,9 +89,14 @@ class InstallConfig:
     env_vars: List[EnvVarEntry] = field(default_factory=list)
     file_associations: List[FileAssociation] = field(default_factory=list)
     system_requirements: Optional[SystemRequirements] = None
+    # Finish page: optional launch checkbox
+    launch_on_finish: str = ""  # Path to executable to run if user checks the Finish page checkbox
+    launch_on_finish_label: str = ""  # Optional label for the checkbox
+    launch_in_background: bool = True  # If False, may use ExecWait semantics (not implemented yet)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "InstallConfig":
+        entries = []
         entries = []
         for e in data.get("registry_entries", []):
             if isinstance(e, dict):
@@ -119,6 +124,9 @@ class InstallConfig:
             env_vars=envs,
             file_associations=file_assocs,
             system_requirements=sysreq,
+            launch_on_finish=data.get("launch_on_finish", ""),
+            launch_on_finish_label=data.get("launch_on_finish_label", ""),
+            launch_in_background=data.get("launch_in_background", True),
         )
 
 

@@ -282,10 +282,14 @@ class TestYamlToNsisConverter(unittest.TestCase):
         config.files = [FileEntry(source="remote.bin", download_url="https://example.com/remote.bin", checksum_type="sha256", checksum_value="abcd", decompress=True)]
         config.install.file_associations = [FileAssociation(extension=".foo", prog_id="Foo.File", description="Foo File", application="$INSTDIR\\Foo.exe", default_icon="$INSTDIR\\icons\\foo.ico", verbs={"open": "$INSTDIR\\Foo.exe \"%1\""})]
         script = YamlToNsisConverter(config).convert()
-        # Installer should include comment about download and checksum
-        self.assertIn('remote.bin', script)
+        # Installer should include download and checksum commands
+        self.assertIn('inetc::get', script)
         self.assertIn('https://example.com/remote.bin', script)
-        self.assertIn('sha256', script)
+        self.assertIn('Push "$INSTDIR\\remote.bin"', script)
+        self.assertIn('Push "sha256"', script)
+        self.assertIn('Push "abcd"', script)
+        self.assertIn('Call VerifyChecksum', script)
+        self.assertIn('Call ExtractArchive', script)
         # File association registration should appear
         self.assertIn('File association: .foo -> $INSTDIR\\Foo.exe', script)
         self.assertIn('WriteRegStr HKCR ".foo" "" "Foo.File"', script)
@@ -293,6 +297,56 @@ class TestYamlToNsisConverter(unittest.TestCase):
         self.assertIn('WriteRegStr HKCR "Foo.File\\Shell\\open\\Command" "" "$INSTDIR\\Foo.exe "%1""', script)
         # Uninstaller should remove keys
         self.assertIn('DeleteRegKey HKCR ".foo"', script)
+
+    def test_install_time_signature_verification_emitted(self):
+        """When signing.verify_signature is True, .onInit should contain PowerShell signature verification"""
+        from ypack.config import SigningConfig
+        config = self.simple_config
+        config.signing = SigningConfig(enabled=True, certificate="c", password="p", timestamp_url="t", verify_signature=True)
+        script = YamlToNsisConverter(config).convert()
+        self.assertIn('Get-AuthenticodeSignature', script)
+        self.assertIn('Signature verification failed', script)
+        self.assertIn('ExecWait', script)
+        # Fallback to signtool should be present
+        self.assertIn('IfFileExists "$WINDIR\\system32\\signtool.exe"', script)
+        self.assertIn('signtool.exe', script)
+
+    def test_system_requirements_checks_emitted(self):
+        """When SystemRequirements are defined, .onInit should contain version/space/memory checks"""
+        from ypack.config import SystemRequirements
+        config = self.simple_config
+        config.install.system_requirements = SystemRequirements(min_windows_version="10.0.0", min_free_space_mb=500, min_ram_mb=2048, require_admin=True)
+        script = YamlToNsisConverter(config).convert()
+        # Check Windows version check and messages
+        self.assertIn('Get-CimInstance Win32_OperatingSystem', script)
+        self.assertIn('Requires Windows 10.0.0 or higher', script)
+        # Check free space
+        self.assertIn('Not enough free disk space on installation drive. Require at least 500 MB', script)
+        # Check RAM
+        self.assertIn('Not enough physical memory. Require at least 2048 MB', script)
+        # Admin requirement note present
+        self.assertIn('Ensure running as administrator (UAC check)', script)
+
+    def test_logging_config_emitted(self):
+        """When logging.enabled is True, generator should emit LogSet on and path"""
+        from ypack.config import LoggingConfig
+        config = self.simple_config
+        config.logging = LoggingConfig(enabled=True, path="$APPDATA\\${APP_NAME}\\install.log", level="DEBUG")
+        script = YamlToNsisConverter(config).convert()
+        self.assertIn('LogSet on', script)
+        self.assertIn('Logging enabled: path=$APPDATA\\${APP_NAME}\\install.log level=DEBUG', script)
+        # Uninstaller logging note
+        self.assertIn('Uninstaller logging enabled', script)
+
+    def test_finish_run_checkbox_emitted(self):
+        """When install.launch_on_finish is set, generator should emit MUI_FINISHPAGE_RUN defines"""
+        from ypack.config import InstallConfig
+        config = self.simple_config
+        config.install.launch_on_finish = "$INSTDIR\\MyApp.exe"
+        config.install.launch_on_finish_label = "Run MyApp"
+        script = YamlToNsisConverter(config).convert()
+        self.assertIn('!define MUI_FINISHPAGE_RUN "$INSTDIR\\MyApp.exe"', script)
+        self.assertIn('!define MUI_FINISHPAGE_RUN_TEXT "Run MyApp"', script)
 
     def test_package_post_install_commands(self):
         """Test post-install commands are emitted for package sections"""

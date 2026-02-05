@@ -11,7 +11,7 @@
 
 | 关键指标 | 数据 |
 |---------|------|
-| Config.py 完全支持 | **13 项（65%）** - 无需修改 |
+| Config.py 完全支持 | **15 项（75%）** - 无需修改 |
 | Config.py 部分支持 | **2 项（10%）** - 需扩展字段 |
 | Config.py 完全缺失 | **5 项（25%）** - 需新增数据类 |
 | **Config 改进工作量** | **~11.5-17 小时** |
@@ -414,50 +414,39 @@ install:
 
 ---
 
-### 7. ⚠️ 多语言支持（目前仅英语）
+### 7. ✅ 多语言支持（已实现）
 
-**当前状态**: 固定为 `MUI_LANGUAGE "English"`  
+**当前状态**: 已在 `PackageConfig.languages` 中支持语言列表，并由转换器为每个语言生成 `!insertmacro MUI_LANGUAGE`。  
 **相关代码**:
 
-- [ypack/converters/convert_nsis.py](../ypack/converters/convert_nsis.py#L214) - 硬编码语言
+- [ypack/config.py](../ypack/config.py#L227-L235) - `PackageConfig.languages`
+- [ypack/converters/convert_nsis.py](../ypack/converters/convert_nsis.py#L310-L320) - 生成 `!insertmacro MUI_LANGUAGE` 指令
 
 **现有能力**:
 
-- ✅ NSIS 框架可支持多语言
-- ✅ 自定义 include 可以添加其他语言
+- ✅ 支持在 YAML 中列出语言（例如 `English`, `SimplifiedChinese` 等）
+- ✅ Converter 为每个配置的语言输出 `!insertmacro MUI_LANGUAGE` 指令
 
-**缺失能力**:
+**待改进**:
 
-- ❌ YAML 中没有语言列表配置
-- ❌ 不会根据配置生成多个 `MUI_LANGUAGE` 指令
-- ❌ 没有语言特定的界面字符串（如卸载确认、错误提示）
-
-**建议改进**:
-
-1. 在 `PackageConfig` 中添加 `languages: ["English", "SimplifiedChinese", ...]`
-2. 在 converter 中为每种语言生成 `!insertmacro MUI_LANGUAGE`
-3. 提供默认语言列表和对应的字符串资源
+- 提供语言特定的界面字符串资源（卸载确认、错误提示等）以实现更完整的本地化体验。
 
 **优先级**: 🟡 中等（国际化项目需要）  
-**预期工作量**: 2 小时
+**预期工作量**: 2-4 小时（添加资源和字符串集成）
 
-**示例设计**（未实现）:
+**示例（已支持）**:
 
 ```yaml
-app:
-  languages:
-    - code: "English"
-      default: true
-    - code: "SimplifiedChinese"
-    - code: "TraditionalChinese"
+languages:
+  - English
+  - SimplifiedChinese
 ```
 
-**生成代码**:
+**生成代码示例**:
 
 ```nsis
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "SimplifiedChinese"
-!insertmacro MUI_LANGUAGE "TraditionalChinese"
 ```
 
 **状态**: ⚠️ 需要添加配置支持
@@ -637,43 +626,38 @@ SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5
 
 ---
 
-### 15. ❌ 日志记录（安装过程日志输出）
+### 15. ✅ 日志记录（安装过程日志输出）
 
-**当前状态**: 完全不支持  
-**缺失代码**: 没有日志配置，没有日志写入逻辑
+**当前状态**: 已实现（基础支持）  
+**已实现内容**:
 
-**为什么需要**:
+- `PackageConfig.logging` 已解析（`enabled/path/level`），转换器会在安装器头部输出 `LogSet on` 并生成日志路径/级别注释。
+- 卸载段也包含日志启用注释，方便收集卸载日志。
+- 新增单元测试验证脚本输出包含 `LogSet on` 与路径注释。
 
-- 排查安装失败问题时需要详细日志
-- 审计安装操作（谁在何时安装了什么）
-- 生成安装报告
+**下一步（建议）**:
 
-**实现思路**:
-
-1. 在 `PackageConfig` 中添加 `logging` 配置（启用/禁用、日志路径）
-2. 在 NSIS 脚本中使用 `LogSet on` 启用日志记录
-3. 定义日志文件路径（如 `$APPDATA\\${APP_NAME}\\install.log`）
-4. 可选：提供"打开日志"的快捷方式或脚本
+1. 在真实 Windows 环境上验证日志文件的写入位置和权限，确认 $APPDATA 等变量解析正确。
+2. 可选：添加日志轮换或包含卸载日志的选项（`include_uninstall`）。
 
 **优先级**: 🟡 中等（调试和支持时有用）  
-**预期工作量**: 2-3 小时
+**预期工作量**: 0.5-1.5 小时（集成验证与额外选项）
 
-**示例设计**:
+**示例设计（已支持）**:
 
 ```yaml
 logging:
   enabled: true
   path: "$APPDATA\\${APP_NAME}\\install.log"
-  include_uninstall: true  # 卸载时也记录
+  level: "DEBUG"
 ```
 
-**生成代码**:
+**生成示例**:
 
 ```nsis
+; Logging enabled: path=$APPDATA\${APP_NAME}\install.log level=DEBUG
 LogSet on
 ```
-
-**状态**: ❌ 需要从零实现
 
 ---
 
@@ -840,12 +824,12 @@ inetc::get "https://example.com/lib/mylib.zip" "$INSTDIR\lib\mylib.zip" /END
 | 10 | 安装路径选择 | ✅ | ✅ | - | 已完成 | ✅ |
 | 11 | 安装进度显示 | ✅ | ✅ | - | 已完成 | ✅ |
 | 12 | 许可协议展示 | ✅ | ✅ | - | 已完成 | ✅ |
-| 13 | 安装前检测 | ❌ | ❌ | 🟡 中等 | 3h | 待开发 |
+| 13 | 安装前检测 | ✅ | ✅ | 🟡 中等 | 0.5-1.5h | 已实现（PowerShell checks） |
 | 14 | 配置文件生成 | ✅ | ✅ | - | 已完成 | ✅ |
 | 15 | 日志记录 | ❌ | ❌ | 🟡 中等 | 2-3h | 待开发 |
 | 16 | 安装后自动运行 | ✅ | ✅ | - | 已完成 | ✅ |
 | 17 | 文件关联 | ❌ | ❌ | 🟡 中等 | 2-3h | 待开发 |
-| 18 | 网络下载/校验 | ❌ | ❌ | 🟠 较高 | 4-5h | 待开发 |
+| 18 | 网络下载/校验 | ⚠️ 部分实现 | ⚠️ 部分实现 | 🟠 较高 | 2-4h | 部分实现（生成下载调用 + 占位校验/解压 + 单元测试）；需集成真实校验与解压 |
 | 19 | 自定义界面 | ✅ | ✅ | - | 已完成 | ✅ |
 | 20 | 安全校验 | ⚠️ | ⚠️ | 🔴 高 | 3-4h | 需完善 |
 
@@ -909,6 +893,23 @@ inetc::get "https://example.com/lib/mylib.zip" "$INSTDIR\lib\mylib.zip" /END
 | 8. 升级/修复功能 | 🟠 较高 | 4-5h | 版本迁移与恢复 |
 
 **小计**: ~13-17 小时，四个功能完成
+
+---
+
+### 🔧 Converter - 尚未实现 / 部分实现的关键项（优先级与验收）
+
+下面列出的项在配置层已支持或已添加字段，但转换器需要实现相应的 NSIS 行为或增强：
+
+| 功能 | 优先级 | 预估工时 | 验收条件 |
+|------|--------|----------|---------|
+| 网络下载与校验（download_url / checksum / decompress） | 🔴 高 | 2-4h | **部分实现**：已生成 `inetc::get` 下载调用与占位 `VerifyChecksum`/`ExtractArchive` 并有单元测试。下一步：集成哈希校验插件（或外部工具）并实现解压（`nsisunz`/7z），添加集成测试并验证失败时中止安装。 |
+| 安装时签名验证（verify_signature） | 🔴 高 | 0.5-1.5h | **已实现（PowerShell + signtool 回退）**：已在 `.onInit` 使用 PowerShell `Get-AuthenticodeSignature` 并在失败时回退到 `signtool.exe`；建议后续添加 WinVerifyTrust 回退与更多集成测试。 |
+| 安装前系统要求检查（SystemRequirements） | � 已实现 | 0.5-1.5h | **已实现（PowerShell checks）**：已在 `.onInit` 中生成检查；建议做集成测试并考虑 NSIS 插件回退选项。 |
+| 依赖检测与条件安装（dependencies） | 🟡 中 | 3-5h | 能检测常见依赖并根据配置执行下载或安装命令（或通过 `post_install` 条件触发）。 |
+| 日志记录（LogSet, 日志路径） | 🟢 低 | 1-2h | 支持 `logging.enabled/path` 并在安装过程中写入日志文件。 |
+| Finish 页面的“立即运行”选项（run_after_install） | 🟢 低 | 1-2h | 添加 `install.run_after_install` 字段并在 Finish 页面显示复选框以控制 `Exec`/`ExecWait`。 |
+
+> 建议：按优先级先实现网络下载与签名验证（高风险/高价值），并为每项编写对应的单元测试与示例 YAML，随后合并到主分支并在 CI（最好带 Windows runner）上做集成验证。
 
 ---
 
