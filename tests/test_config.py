@@ -130,6 +130,37 @@ class TestPackageConfig(unittest.TestCase):
         self.assertTrue(config.update.enabled)
         self.assertEqual(config.update.update_url, "https://example.com/updates")
 
+    def test_languages_default_and_custom(self):
+        """Test default languages and custom language list from dict"""
+        config = PackageConfig.from_dict(self.test_yaml)
+        self.assertEqual(config.languages, ["English"])
+        data = self.test_yaml.copy()
+        data["languages"] = ["English", "SimplifiedChinese"]
+        config2 = PackageConfig.from_dict(data)
+        self.assertEqual(config2.languages, ["English", "SimplifiedChinese"])
+
+    def test_env_vars_parsing(self):
+        """Test parsing of environment variables from config"""
+        data = self.test_yaml.copy()
+        data["install"] = data.get("install", {})
+        data["install"]["env_vars"] = [
+            {
+                "name": "TEST_VAR",
+                "value": "test_value",
+                "scope": "user",
+                "remove_on_uninstall": True,
+                "append": False,
+            }
+        ]
+        config = PackageConfig.from_dict(data)
+        self.assertEqual(len(config.install.env_vars), 1)
+        ev = config.install.env_vars[0]
+        self.assertEqual(ev.name, "TEST_VAR")
+        self.assertEqual(ev.value, "test_value")
+        self.assertEqual(ev.scope, "user")
+        self.assertTrue(ev.remove_on_uninstall)
+        self.assertFalse(ev.append)
+
 
 if __name__ == '__main__':
     unittest.main()

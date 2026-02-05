@@ -57,6 +57,26 @@ class RegistryEntry:
 
 
 @dataclass
+class EnvVarEntry:
+    """Environment variable configuration"""
+    name: str
+    value: str
+    scope: str = "system"  # "system" (HKLM) or "user" (HKCU)
+    remove_on_uninstall: bool = True
+    append: bool = False
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "EnvVarEntry":
+        return cls(
+            name=data.get("name", ""),
+            value=data.get("value", ""),
+            scope=data.get("scope", "system"),
+            remove_on_uninstall=data.get("remove_on_uninstall", True),
+            append=data.get("append", False),
+        )
+
+
+@dataclass
 class InstallConfig:
     """Installation configuration"""
     install_dir: str = "$PROGRAMFILES64\\${APP_NAME}"
@@ -64,6 +84,7 @@ class InstallConfig:
     create_start_menu_shortcut: bool = True
     registry_key: str = "Software\\${APP_NAME}"
     registry_entries: List[RegistryEntry] = field(default_factory=list)
+    env_vars: List[EnvVarEntry] = field(default_factory=list)
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "InstallConfig":
@@ -71,12 +92,17 @@ class InstallConfig:
         for e in data.get("registry_entries", []):
             if isinstance(e, dict):
                 entries.append(RegistryEntry.from_dict(e))
+        envs = []
+        for v in data.get("env_vars", []):
+            if isinstance(v, dict):
+                envs.append(EnvVarEntry.from_dict(v))
         return cls(
             install_dir=data.get("install_dir", "$PROGRAMFILES64\\${APP_NAME}"),
             create_desktop_shortcut=data.get("create_desktop_shortcut", True),
             create_start_menu_shortcut=data.get("create_start_menu_shortcut", True),
             registry_key=data.get("registry_key", "Software\\${APP_NAME}"),
             registry_entries=entries,
+            env_vars=envs,
         )
 
 
@@ -219,6 +245,7 @@ class PackageConfig:
     packages: List[PackageEntry] = field(default_factory=list)
     signing: Optional[SigningConfig] = None
     update: Optional[UpdateConfig] = None
+    languages: List[str] = field(default_factory=lambda: ["English"])
     custom_nsis_includes: List[str] = field(default_factory=list)
     
     @classmethod
@@ -235,6 +262,7 @@ class PackageConfig:
                      for name, pkg_data in data.get("packages", {}).items()],
             signing=SigningConfig.from_dict(data["signing"]) if "signing" in data else None,
             update=UpdateConfig.from_dict(data["update"]) if "update" in data else None,
+            languages=data.get("languages", ["English"]),
             custom_nsis_includes=data.get("custom_nsis_includes", [])
         )
     
@@ -249,5 +277,6 @@ class PackageConfig:
                      for name, pkg_data in data.get("packages", {}).items()],
             signing=SigningConfig.from_dict(data["signing"]) if "signing" in data else None,
             update=UpdateConfig.from_dict(data["update"]) if "update" in data else None,
+            languages=data.get("languages", ["English"]),
             custom_nsis_includes=data.get("custom_nsis_includes", [])
         )

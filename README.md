@@ -131,6 +131,39 @@ install:
 
 注意：`SetRegView` 会改变后续的注册表视图（32/64 位）。转换器会在每条有指定 `view` 的条目之前插入对应的 `SetRegView`，以确保写入/删除在预期的注册表视图中执行。
 
+### 环境变量 / Environment variables
+
+你可以通过 `install.env_vars` 在安装/卸载阶段设置或删除环境变量。对 `PATH` 支持追加模式（`append: true`）并包含归一化机制来避免重复和处理大小写差异。
+
+示例：
+
+```yaml
+install:
+  env_vars:
+    - name: MY_VAR
+      value: "C:\\Program Files\\MyApp"
+      scope: system        # system -> HKLM, user -> HKCU
+      remove_on_uninstall: true
+      append: false
+
+    - name: PATH
+      value: "$INSTDIR\\bin"
+      scope: system
+      append: true         # 追加到 PATH（会去重并在卸载时移除）
+      remove_on_uninstall: true
+```
+
+实现说明：
+
+- 当 `append: true` 且 `name` 为 `PATH` 时，生成器会：
+  - 读取当前 PATH（注册表）并对 PATH 与要追加的条目进行 **归一化**（转换分隔符、去重、大小写规范化），
+  - 仅在未存在时追加，写回注册表并广播 `WM_SETTINGCHANGE` 以使修改生效，
+  - 在卸载时会精确移除之前追加的条目（如果 `remove_on_uninstall: true`）。
+
+- 对非 `PATH` 的 `append: true`，转换器会写入值但不会做自动合并（会以注释说明）。
+
+- 注意：修改系统 PATH 需要管理员权限，且在某些情况下需要重启或重新登录以完全生效。
+
 如果在同一配置中混用了多个不同的 `view`（例如既有 `32` 又有 `64`），生成器会在注册表段顶部插入显眼注释提醒：
 
 ```
@@ -193,6 +226,26 @@ custom_nsis_includes:
   - "custom_functions.nsh"
   - "extra_pages.nsh"
 ```
+
+## 国际化 / Languages
+
+你可以通过 `languages` 字段为生成的安装器启用多个界面语言（NSIS Modern UI 的 MUI 语言标识）。
+
+示例：
+
+```yaml
+# 在 installer.yaml 中指定多语言支持
+languages:
+  - English
+  - SimplifiedChinese  # 简体中文
+  - TraditionalChinese # 繁體中文
+```
+
+说明：
+
+- 默认值：如果未指定 `languages`，转换器会使用 `["English"]`。
+- 支持值：使用 NSIS MUI 可识别的语言标识（例如：`English`, `SimplifiedChinese`, `TraditionalChinese`, `French`, `German`, `Spanish`, `Japanese`, `Korean`, `Russian` 等）。
+- 注意：请使用 MUI 的精确标识字符串，转换器会为每个配置项生成一条 `!insertmacro MUI_LANGUAGE "<lang>"` 指令。
 
 ## 使用示例 / Usage Examples
 

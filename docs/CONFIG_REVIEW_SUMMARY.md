@@ -83,16 +83,41 @@ languages: List[str] = field(default_factory=lambda: ["English"])
 ## 📝 Config.py 改动检查清单
 
 ### Phase 0 - 多语言
-- [ ] 在 `PackageConfig` 中添加 `languages: List[str]` 字段
-- [ ] 在 `from_yaml()` 和 `from_dict()` 中解析该字段
-- [ ] 更新示例 YAML
+- [x] 在 `PackageConfig` 中添加 `languages: List[str]` 字段
+- [x] 在 `from_yaml()` 和 `from_dict()` 中解析该字段
+- [x] 更新示例 YAML
+
+#### 示例 / Example
+在 YAML 中添加 `languages` 字段以启用多语言生成：
+
+```yaml
+languages:
+  - English
+  - SimplifiedChinese
+```
+
+常见 MUI 语言标识示例（可用值不限于此）：
+
+- English
+- SimplifiedChinese
+- TraditionalChinese
+- French
+- German
+- Spanish
+- Japanese
+- Korean
+- Russian
+
+说明：转换器会为每个语言输出 `!insertmacro MUI_LANGUAGE "<lang>"`，默认回退到 `English`。
 
 ### Phase 1 - 环境变量
-- [ ] 创建 `EnvVarEntry` 数据类
-- [ ] 在 `InstallConfig` 中添加 `env_vars: List[EnvVarEntry]` 字段
-- [ ] 在 `from_yaml()` 中解析
-- [ ] 编写单元测试
-- [ ] 更新示例 YAML
+- [x] 创建 `EnvVarEntry` 数据类
+- [x] 在 `InstallConfig` 中添加 `env_vars: List[EnvVarEntry]` 字段
+- [x] 在 `from_yaml()` 中解析
+- [x] 编写单元测试
+- [x] 更新示例 YAML
+
+说明：支持 `PATH` 的 `append: true` 行为，包含基本归一化（分隔符归一、去重、大小写规范化的尝试）与卸载时的精确移除逻辑。
 
 ### Phase 2 - 升级和安全
 - [ ] 在 `UpdateConfig` 中添加字段：

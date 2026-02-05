@@ -121,6 +121,84 @@ class YamlToNsisConverter(BaseConverter):
             lines.append(f'!define MUI_UNICON "{rel_icon_path}"')
             lines.append("")
 
+        # If any env vars request append behavior, emit helper functions (Contains & RemovePathEntry)
+        envs = getattr(self.config.install, 'env_vars', []) if getattr(self.config, 'install', None) else []
+        if any(getattr(e, 'append', False) for e in envs):
+            lines.append('; Helper: check if a substring exists in a string (sets $R9 to 1 if found, 0 otherwise; $R8 = index)')
+            lines.extend([
+                'Function _Contains',
+                '  ; $0 = haystack, $1 = needle',
+                '  StrCpy $R9 0',
+                '  StrCpy $R8 -1',
+                '  StrLen $R2 $0',
+                '  StrLen $R3 $1',
+                '  IntCmp $R3 0 0 +4',
+                '    StrCpy $R9 1',
+                '    StrCpy $R8 0',
+                '    Return',
+                '  IntOp $R4 $R2 - $R3',
+                '  StrCpy $R5 0',
+                '  loop_find:',
+                '  IntCmp $R5 $R4 +3 0 0',
+                '  StrCpy $R6 $0 $R3 $R5',
+                '  StrCmp $R6 $1 found_find',
+                '  IntOp $R5 $R5 + 1',
+                '  Goto loop_find',
+                '  found_find:',
+                '  StrCpy $R9 1',
+                '  StrCpy $R8 $R5',
+                '  Return',
+                'FunctionEnd',
+                '',
+                '; Helper: normalize a PATH entry (convert slashes, trim, uppercase using system call) and remove duplicate separators',
+                'Function _NormalizePathEntry',
+                '  ; $0 = input path or PATH string (in-place normalization)',
+                '  ; Convert forward slashes to backslashes',
+                '  StrReplace $0 "/" "\\"',
+                '  ; Trim surrounding spaces',
+                '  ; (Simple trim implementation) ',
+                '  StrCpy $R0 $0',
+                '  ; Upper-case using CharUpperBuffA for case-insensitive comparison',
+                '  System::Call "kernel32::CharUpperBuffA(t, i) i .r1"',
+                '  ; Remove duplicate semicolons',
+                '  loop_trim_semi:',
+                '  StrReplace $0 ";;" ";"',
+                '  StrCmp $R1 $R0 0 +2',
+                '  Goto loop_trim_semi',
+                'FunctionEnd',
+                '',
+                '; Helper: remove an exact path entry from a PATH-like string (in $0) using the index found by _Contains',
+                'Function _RemovePathEntry',
+                '  ; $0 = original PATH, $1 = entry to remove',
+                '  Call _NormalizePathEntry',
+                '  StrCpy $0 ";$0;"',
+                '  Call _NormalizePathEntry',
+                '  StrCpy $1 ";$1;"',
+                '  ; Loop until no occurrence remains',
+                '  loop_remove:',
+                '  StrCpy $2 $0',
+                '  StrCpy $3 $1',
+                '  Call _Contains',
+                '  StrCmp $R9 "1" 0 +6',
+                '    ; Found at $R8; remove substring at $R8 of length len($R1)',
+                '    StrLen $R2 $R1',
+                '    ; prefix',
+                '    StrCpy $R3 $R0 $R8 0',
+                '    ; suffix',
+                '    IntOp $R4 $R8 + $R2',
+                '    StrLen $R5 $R0',
+                '    IntOp $R6 $R5 - $R4',
+                '    StrCpy $R4 $R0 $R6 $R4',
+                '    StrCpy $0 "$R3$R4"',
+                '    Goto loop_remove',
+                '  ; Trim leading/trailing semicolons',
+                '  StrLen $R7 $R0',
+                '  IntOp $R7 $R7 - 2',
+                '  StrCpy $0 $R0 $R7 1',
+                'FunctionEnd',
+                ''
+            ])
+
         return lines
 
     def _resolve_path_relative_to_config(self, path: str) -> str:
@@ -223,9 +301,16 @@ class YamlToNsisConverter(BaseConverter):
             "!insertmacro MUI_UNPAGE_CONFIRM",
             "!insertmacro MUI_UNPAGE_INSTFILES",
             "",
-            "!insertmacro MUI_LANGUAGE \"English\"",
-            "",
         ])
+        # Emit language macros based on configuration (defaults to English)
+        langs = getattr(self.config, 'languages', None)
+        if langs:
+            for lang in langs:
+                lines.append(f'!insertmacro MUI_LANGUAGE "{lang}"')
+            lines.append("")
+        else:
+            lines.append('!insertmacro MUI_LANGUAGE "English"')
+            lines.append("")
         return lines
 
     def _generate_installer_section(self) -> List[str]:
@@ -291,6 +376,52 @@ class YamlToNsisConverter(BaseConverter):
                 lines.append(f'  WriteRegDWORD {entry.hive} "{entry.key}" "{entry.name}" {value}')
             else:
                 lines.append(f'  ; Unsupported registry type: {entry.type} for {entry.name}')
+
+        # Environment variables
+        for env in getattr(self.config.install, 'env_vars', []):
+            env_value = self._interpolate_yaml_placeholders(env.value)
+            scope = (env.scope or "system").lower()
+            if scope == 'system':
+                hive = 'HKLM'
+                key = 'SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment'
+            else:
+                hive = 'HKCU'
+                key = 'Environment'
+
+            lines.append(f'  ; Environment variable: {env.name} ({env.scope})')
+
+            # PATH append behavior: read current PATH and append if not present
+            if env.append and env.name.upper() == 'PATH':
+                lines.append(f'  ReadRegStr $0 {hive} "{key}" "{env.name}"')
+                lines.append(f'  StrCpy $1 "{env_value}"')
+                lines.append('  ; Normalize PATH and entry for robust comparison')
+                lines.append('  Call _NormalizePathEntry  ; normalize current PATH in $0')
+                lines.append('  StrCpy $2 $1')
+                lines.append('  StrCpy $0 $2')
+                lines.append('  Call _NormalizePathEntry  ; normalize candidate entry in $0')
+                lines.append('  StrCpy $1 $0')
+                lines.append('  StrCpy $0 $2  ; restore PATH into $0 for semicolon-wrapping')
+                lines.append('  ; Append PATH entry if not present (normalize and check with _Contains)')
+                lines.append('  StrCpy $0 ";$0;"')
+                lines.append('  StrCpy $1 ";$1;"')
+                lines.append('  Call _Contains')
+                lines.append('  StrCmp $R9 "1" 0 +6')
+                lines.append(f'  ; Already present: skip append for {env.name}')
+                lines.append('  Goto _skip_append')
+                lines.append('  ; Append and write back')
+                lines.append('  StrCpy $0 "$0$1"')
+                lines.append('  ; Remove extra leading/trailing semicolons')
+                lines.append('  StrLen $R2 $0')
+                lines.append('  IntOp $R2 $R2 - 2')
+                lines.append('  StrCpy $0 $0 $R2 1')
+                lines.append(f'  WriteRegStr {hive} "{key}" "{env.name}" "$0"')
+                lines.append('  ; Broadcast environment change so PATH becomes effective')
+                lines.append('  System::Call "User32::SendMessageTimeoutA(i 0xffff, i 0x1A, i 0, t \"Environment\", i 0x2, i 500, *i .r0)"')
+                lines.append('_skip_append:')
+            else:
+                if env.append:
+                    lines.append(f'  ; append=True specified for {env.name} but only PATH append is implemented; setting value directly')
+                lines.append(f'  WriteRegStr {hive} "{key}" "{env.name}" "{env_value}"')
 
         # Desktop shortcut
         if self.config.install.create_desktop_shortcut:
@@ -374,6 +505,35 @@ class YamlToNsisConverter(BaseConverter):
             if entry.view in ("32", "64"):
                 lines.append(f'  SetRegView {entry.view}')
             lines.append(f'  DeleteRegValue {entry.hive} "{entry.key}" "{entry.name}"')
+
+        # Remove environment variables defined in config (if requested)
+        for env in getattr(self.config.install, 'env_vars', []):
+            if not getattr(env, 'remove_on_uninstall', True):
+                continue
+            scope = (env.scope or "system").lower()
+            if scope == 'system':
+                hive = 'HKLM'
+                key = 'SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment'
+            else:
+                hive = 'HKCU'
+                key = 'Environment'
+
+            # If PATH and append was used, call helper to remove the exact entry; otherwise delete value
+            if getattr(env, 'append', False) and env.name.upper() == 'PATH':
+                lines.append(f'  ReadRegStr $0 {hive} "{key}" "{env.name}"')
+                lines.append(f'  StrCpy $1 "{self._interpolate_yaml_placeholders(env.value)}"')
+                lines.append('  ; Remove the exact entry (if present)')
+                lines.append('  StrCpy $0 ";$0;"')
+                lines.append('  StrCpy $1 ";$1;"')
+                lines.append('  Call _RemovePathEntry')
+                lines.append('  ; Trim and write back')
+                lines.append('  StrLen $R2 $0')
+                lines.append('  IntOp $R2 $R2 - 2')
+                lines.append('  StrCpy $0 $0 $R2 1')
+                lines.append(f'  WriteRegStr {hive} "{key}" "{env.name}" "$0"')
+                lines.append('  System::Call "User32::SendMessageTimeoutA(i 0xffff, i 0x1A, i 0, t \"Environment\", i 0x2, i 500, *i .r0)"')
+            else:
+                lines.append(f'  DeleteRegValue {hive} "{key}" "{env.name}"')
 
         lines.extend([
             "SectionEnd",

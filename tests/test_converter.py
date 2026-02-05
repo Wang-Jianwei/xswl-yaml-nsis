@@ -106,6 +106,56 @@ class TestYamlToNsisConverter(unittest.TestCase):
         script = converter.convert()
         # Should NOT have MUI_PAGE_COMPONENTS when packages is empty
         self.assertNotIn("MUI_PAGE_COMPONENTS", script)
+
+    def test_modern_ui_languages(self):
+        """Modern UI should include MUI_LANGUAGE entries for each configured language"""
+        config = self.simple_config
+        config.languages = ["English", "SimplifiedChinese"]
+        converter = YamlToNsisConverter(config)
+        ui = converter._generate_modern_ui()
+        script = "\n".join(ui)
+        self.assertIn('!insertmacro MUI_LANGUAGE "English"', script)
+        self.assertIn('!insertmacro MUI_LANGUAGE "SimplifiedChinese"', script)
+
+    def test_env_vars_are_written_and_removed(self):
+        """Environment variables should be written to registry and removed on uninstall"""
+        from ypack.config import EnvVarEntry
+
+        config = self.simple_config
+        config.install.env_vars = [
+            EnvVarEntry(name="MYVAR", value="C:\\Program Files\\MyApp", scope="system", remove_on_uninstall=True)
+        ]
+        converter = YamlToNsisConverter(config)
+        script = converter.convert()
+        # Installer writes the env var into the system environment registry
+        self.assertIn('WriteRegStr HKLM "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" "MYVAR" "C:\\Program Files\\MyApp"', script)
+        # Uninstaller removes the registry value
+        self.assertIn('DeleteRegValue HKLM "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" "MYVAR"', script)
+
+    def test_path_append_and_remove_logic(self):
+        """When append=True for PATH, generator emits helper functions and calls to append/remove path entries"""
+        from ypack.config import EnvVarEntry
+
+        config = self.simple_config
+        config.install.env_vars = [
+            EnvVarEntry(name="PATH", value="$INSTDIR\\bin", scope="system", append=True, remove_on_uninstall=True)
+        ]
+        converter = YamlToNsisConverter(config)
+        script = converter.convert()
+        # Should include helper functions and calls
+        self.assertIn('Function _Contains', script)
+        self.assertIn('Call _Contains', script)
+        self.assertIn('Function _RemovePathEntry', script)
+        self.assertIn('Call _RemovePathEntry', script)
+        # Should read and write PATH in installer/uninstaller
+        self.assertIn('ReadRegStr $0 HKLM "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" "PATH"', script)
+        self.assertIn('WriteRegStr HKLM "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" "PATH"', script)
+        # Should broadcast environment change to make PATH effective
+        self.assertIn('SendMessageTimeoutA', script)
+        # Normalization helpers should be present and invoked
+        self.assertIn('Function _NormalizePathEntry', script)
+        self.assertIn('Call _NormalizePathEntry', script)
+        self.assertIn('CharUpperBuffA', script)
     
     def test_package_sections_generation(self):
         """Test generation of package sections"""
