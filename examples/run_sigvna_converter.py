@@ -12,7 +12,7 @@ import yaml
 import argparse
 
 from xswl_yaml_nsis.config import PackageConfig
-from xswl_yaml_nsis.converter import YamlToNsisConverter
+from xswl_yaml_nsis.converters.convert_nsis import YamlToNsisConverter
 
 
 def find_existing(path_candidates):

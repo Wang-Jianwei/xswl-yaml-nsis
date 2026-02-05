@@ -5,15 +5,19 @@ YAML to NSIS script converter
 import os
 import re
 from typing import List
-from .config import PackageConfig
+
+from .base import BaseConverter
+from ..config import PackageConfig
 
 
-class YamlToNsisConverter:
+class YamlToNsisConverter(BaseConverter):
     """Converts YAML configuration to NSIS script"""
-    
+
+    tool_name = "nsis"
+
     def __init__(self, config: PackageConfig):
-        self.config = config
-    
+        super().__init__(config)
+
     def _replace_variables(self, text: str) -> str:
         """Replace variable placeholders with actual values"""
         replacements = {
@@ -24,25 +28,25 @@ class YamlToNsisConverter:
         for var, value in replacements.items():
             text = text.replace(var, value)
         return text
-    
+
     def _interpolate_yaml_placeholders(self, text: str) -> str:
         """Replace YAML placeholders with config values dynamically.
-        
+
         Supports placeholders like {app_name}, {app.name}, {install.install_dir}, etc.
         Searches for patterns {key} or {object.attribute.nested} and resolves from config.
-        
+
         Args:
             text: Text with {placeholder} style placeholders
-            
+
         Returns:
             Text with placeholders replaced by actual values
         """
         if not text:
             return text
-        
+
         # Find all {placeholder} patterns
         pattern = r'\{([^}]+)\}'
-        
+
         def replace_placeholder(match):
             placeholder = match.group(1)
             try:
@@ -55,29 +59,29 @@ class YamlToNsisConverter:
                 return str(obj) if obj is not None else match.group(0)
             except (AttributeError, TypeError):
                 return match.group(0)  # Return original if error
-        
+
         return re.sub(pattern, replace_placeholder, text)
-    
+
     def _normalize_path(self, path: str) -> str:
         """Convert Python-style paths to NSIS-compatible Windows paths.
-        
+
         Converts:
         - Forward slashes (/) to backslashes (\\)
         - Double asterisks (**) to single asterisks (*)
-        
+
         Args:
             path: Path string (may use / or **/ for recursion)
-            
+
         Returns:
             NSIS-compatible Windows path
         """
         # Replace Python-style recursive glob with single asterisk
         path = path.replace("/**/", "\\")
         path = path.replace("**/", "")
-        
+
         # Replace forward slashes with backslashes
         path = path.replace("/", "\\")
-        
+
         return path
 
     def _should_use_recursive(self, source: str) -> bool:
@@ -89,7 +93,7 @@ class YamlToNsisConverter:
         if not source:
             return False
         return "**" in source
-    
+
     def _generate_header(self) -> List[str]:
         """Generate NSIS header section with MUI definitions"""
         lines = [
@@ -104,21 +108,21 @@ class YamlToNsisConverter:
             f'!define REG_KEY "Software\\{self.config.app.name}"',
             "",
         ]
-        
+
         # Add MUI icon definitions (must be before MUI2.nsh include)
         if self.config.app.icon:
             abs_icon_path = self._resolve_path_relative_to_config(self.config.app.icon)
             rel_icon_path = self._get_relative_path_for_nsi(abs_icon_path) if os.path.exists(abs_icon_path) else self.config.app.icon
-            
+
             lines.append("; Modern UI Icons")
             if not os.path.exists(abs_icon_path):
                 lines.append(f"; Warning: Icon file not found: {self.config.app.icon}")
             lines.append(f'!define MUI_ICON "{rel_icon_path}"')
             lines.append(f'!define MUI_UNICON "{rel_icon_path}"')
             lines.append("")
-        
+
         return lines
-    
+
     def _resolve_path_relative_to_config(self, path: str) -> str:
         """Resolve a path relative to the YAML config directory if necessary.
         Returns absolute path if found, otherwise returns original path string."""
@@ -140,27 +144,27 @@ class YamlToNsisConverter:
 
     def _get_relative_path_for_nsi(self, file_path: str, nsi_dir: str = None) -> str:
         """Convert absolute file path to relative path suitable for NSIS script.
-        
+
         If file is in the same directory as the .nsi file, returns just the filename.
         Otherwise returns the path relative to the .nsi directory.
-        
+
         Args:
             file_path: Absolute or relative path to the file
             nsi_dir: Directory where .nsi file is located. If None, uses config._config_dir
-            
+
         Returns:
             Path suitable for inclusion in NSIS script (forward slashes converted to backslashes)
         """
         if not file_path:
             return file_path
-            
+
         # Resolve to absolute path
         abs_path = self._resolve_path_relative_to_config(file_path)
-        
+
         # Get NSIS output directory (config directory by default)
         if nsi_dir is None:
             nsi_dir = getattr(self.config, '_config_dir', os.getcwd())
-        
+
         # Compute relative path from .nsi directory to file
         try:
             rel_path = os.path.relpath(abs_path, nsi_dir)
@@ -181,7 +185,7 @@ class YamlToNsisConverter:
             'InstallDirRegKey HKLM "${REG_KEY}" "InstallPath"',
             'RequestExecutionLevel admin',
         ]
-        
+
         # Add license if specified - use relative path for NSIS
         if self.config.app.license:
             abs_license_path = self._resolve_path_relative_to_config(self.config.app.license)
@@ -193,10 +197,10 @@ class YamlToNsisConverter:
                 lines.append(f'; Warning: License file not found: {self.config.app.license}')
                 lines.append(f'!define LICENSE_FILE "{self.config.app.license}"')
                 lines.append(f'LicenseData "${{LICENSE_FILE}}"')
-        
+
         lines.append("")
         return lines
-    
+
     def _generate_modern_ui(self) -> List[str]:
         """Generate Modern UI configuration"""
         lines = [
@@ -206,11 +210,11 @@ class YamlToNsisConverter:
             "; UI Pages",
             "!insertmacro MUI_PAGE_LICENSE \"${LICENSE_FILE}\"" if self.config.app.license else "; No license page",
         ]
-        
+
         # Add components page if packages are defined
         if self.config.packages:
             lines.append("!insertmacro MUI_PAGE_COMPONENTS")
-        
+
         lines.extend([
             "!insertmacro MUI_PAGE_DIRECTORY",
             "!insertmacro MUI_PAGE_INSTFILES",
@@ -223,7 +227,7 @@ class YamlToNsisConverter:
             "",
         ])
         return lines
-    
+
     def _generate_installer_section(self) -> List[str]:
         """Generate installer section"""
         lines = [
@@ -233,7 +237,7 @@ class YamlToNsisConverter:
             "  SetOutPath $INSTDIR",
             "",
         ]
-        
+
         # Add files
         for file_entry in self.config.files:
             normalized_source = self._normalize_path(file_entry.source)
@@ -243,14 +247,14 @@ class YamlToNsisConverter:
                 lines.append(f'  File "{normalized_source}"')
             if file_entry.destination != "$INSTDIR":
                 lines.append(f'  ; Install to: {file_entry.destination}')
-        
+
         lines.extend([
             "",
             "  ; Write uninstaller",
             '  WriteUninstaller "$INSTDIR\\Uninstall.exe"',
             "",
         ])
-        
+
         # Registry entries
         lines.extend([
             "  ; Registry entries",
@@ -287,7 +291,7 @@ class YamlToNsisConverter:
                 lines.append(f'  WriteRegDWORD {entry.hive} "{entry.key}" "{entry.name}" {value}')
             else:
                 lines.append(f'  ; Unsupported registry type: {entry.type} for {entry.name}')
-        
+
         # Desktop shortcut
         if self.config.install.create_desktop_shortcut:
             lines.extend([
@@ -295,7 +299,7 @@ class YamlToNsisConverter:
                 '  CreateShortCut "$DESKTOP\\${APP_NAME}.lnk" "$INSTDIR\\${APP_NAME}.exe"',
                 "",
             ])
-        
+
         # Start menu shortcut
         if self.config.install.create_start_menu_shortcut:
             lines.extend([
@@ -305,12 +309,12 @@ class YamlToNsisConverter:
                 '  CreateShortCut "$SMPROGRAMS\\${APP_NAME}\\Uninstall.lnk" "$INSTDIR\\Uninstall.exe"',
                 "",
             ])
-        
+
         lines.append("SectionEnd")
         lines.append("")
-        
+
         return lines
-    
+
     def _generate_uninstaller_section(self) -> List[str]:
         """Generate uninstaller section"""
         lines = [
@@ -319,7 +323,7 @@ class YamlToNsisConverter:
             "",
             "  ; Remove files",
         ]
-        
+
         # Remove files from regular files list (in reverse order)
         for file_entry in reversed(self.config.files):
             filename = os.path.basename(file_entry.source)
@@ -329,7 +333,7 @@ class YamlToNsisConverter:
                 lines.append(f'  RMDir /r "$INSTDIR\\{dirname}"')
             else:
                 lines.append(f'  Delete "$INSTDIR\\{filename}"')
-        
+
         lines.extend([
             "",
             "  ; Remove uninstaller",
@@ -339,7 +343,7 @@ class YamlToNsisConverter:
             '  RMDir "$INSTDIR"',
             "",
         ])
-        
+
         # Remove shortcuts
         if self.config.install.create_desktop_shortcut:
             lines.extend([
@@ -347,7 +351,7 @@ class YamlToNsisConverter:
                 '  Delete "$DESKTOP\\${APP_NAME}.lnk"',
                 "",
             ])
-        
+
         if self.config.install.create_start_menu_shortcut:
             lines.extend([
                 "  ; Remove start menu shortcuts",
@@ -356,7 +360,7 @@ class YamlToNsisConverter:
                 '  RMDir "$SMPROGRAMS\\${APP_NAME}"',
                 "",
             ])
-        
+
         # Remove registry entries
         lines.extend([
             "  ; Remove registry entries",
@@ -375,14 +379,14 @@ class YamlToNsisConverter:
             "SectionEnd",
             "",
         ])
-        
+
         return lines
-    
+
     def _generate_signing_section(self) -> List[str]:
         """Generate code signing commands"""
         if not self.config.signing or not self.config.signing.enabled:
             return []
-        
+
         lines = [
             "; Code Signing Configuration",
             f'; Certificate: {self.config.signing.certificate}',
@@ -392,12 +396,12 @@ class YamlToNsisConverter:
             "",
         ]
         return lines
-    
+
     def _generate_update_section(self) -> List[str]:
         """Generate auto-update configuration"""
         if not self.config.update or not self.config.update.enabled:
             return []
-        
+
         lines = [
             "; Auto-Update Configuration",
             f'!define UPDATE_URL "{self.config.update.update_url}"',
@@ -412,17 +416,17 @@ class YamlToNsisConverter:
             "",
         ]
         return lines
-    
+
     def _generate_package_sections(self) -> List[str]:
         """Generate sections for each package/component"""
         if not self.config.packages:
             return []
-        
+
         lines = [
             "; Package/Component Sections",
             "",
         ]
-        
+
         def _make_file_line(pkg_entry, s):
             resolved = self._resolve_path_relative_to_config(s)
             if os.path.exists(resolved):
@@ -467,18 +471,18 @@ class YamlToNsisConverter:
 
         _emit_group_or_section(self.config.packages, [0])
         return lines
-    
+
     def _generate_section_initialization(self) -> List[str]:
         """Generate initialization code for section flags (optional, default settings)"""
         if not self.config.packages:
             return []
-        
+
         lines = [
             "; Section Flags - Control default selection state",
             "Function .onInit",
             "",
         ]
-        
+
         for idx, pkg in enumerate(self._flatten_packages(self.config.packages)):
             sec_name = f"SEC_PKG_{idx}"
             if pkg.optional and not pkg.default:
@@ -487,12 +491,12 @@ class YamlToNsisConverter:
             elif not pkg.optional:
                 # Required -> keep selected
                 lines.append(f'  SectionSetFlags ${{{sec_name}}} ${{SF_SELECTED}}')
-        
+
         lines.extend([
             "FunctionEnd",
             "",
         ])
-        
+
         return lines
 
     def _flatten_packages(self, packages):
@@ -504,25 +508,25 @@ class YamlToNsisConverter:
             else:
                 flat.append(pkg)
         return flat
-    
+
     def _generate_custom_includes(self) -> List[str]:
         """Generate custom NSIS includes"""
         if not self.config.custom_nsis_includes:
             return []
-        
+
         lines = [
             "; Custom NSIS Includes",
         ]
         for include_file in self.config.custom_nsis_includes:
             lines.append(f'!include "{include_file}"')
         lines.append("")
-        
+
         return lines
-    
+
     def convert(self) -> str:
         """Convert YAML configuration to NSIS script"""
         nsis_lines = []
-        
+
         # Add all sections
         nsis_lines.extend(self._generate_header())
         nsis_lines.extend(self._generate_custom_includes())
@@ -534,9 +538,9 @@ class YamlToNsisConverter:
         nsis_lines.extend(self._generate_package_sections())
         nsis_lines.extend(self._generate_uninstaller_section())
         nsis_lines.extend(self._generate_section_initialization())
-        
+
         return "\n".join(nsis_lines)
-    
+
     def save(self, output_path: str) -> None:
         """Save NSIS script to file"""
         nsis_script = self.convert()

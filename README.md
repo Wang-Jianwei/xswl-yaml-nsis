@@ -134,7 +134,11 @@ install:
 如果在同一配置中混用了多个不同的 `view`（例如既有 `32` 又有 `64`），生成器会在注册表段顶部插入显眼注释提醒：
 
 ```
-; Note: registry entries use multiple SetRegView values: 32,64. Converter will insert SetRegView before each affected entry. Be aware SetRegView affects subsequent registry operations.
+; ============================================================
+; WARNING: registry entries use multiple SetRegView values: 32,64
+; Converter will insert SetRegView before each affected entry.
+; Be aware: SetRegView affects subsequent registry operations.
+; ============================================================
 ```
 
 ### 文件配置 / Files Configuration
@@ -238,8 +242,11 @@ files:
 # 查看帮助 / Show help
 xswl-yaml-nsis --help
 
-# 生成 NSIS 脚本 / Generate NSIS script
+# 生成 NSIS 脚本 / Generate NSIS script (默认格式 nsis)
 xswl-yaml-nsis config.yaml
+
+# 指定格式 / Specify format (currently: nsis)
+xswl-yaml-nsis config.yaml --format nsis
 
 # 指定输出文件 / Specify output file
 xswl-yaml-nsis config.yaml -o custom.nsi

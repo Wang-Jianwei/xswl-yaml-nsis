@@ -7,7 +7,7 @@ import sys
 import os
 import subprocess
 from .config import PackageConfig
-from .converter import YamlToNsisConverter
+from .converters import YamlToNsisConverter
 
 
 def main():
@@ -39,6 +39,12 @@ def main():
         action="store_true",
         help="Verbose output"
     )
+    parser.add_argument(
+        "--format",
+        default="nsis",
+        choices=["nsis", "wix"],
+        help="Packaging format (nsis supported; wix planned)"
+    )
     
     args = parser.parse_args()
     
@@ -60,17 +66,24 @@ def main():
         # Record config directory so converter can resolve relative paths from YAML file location
         config._config_dir = os.path.dirname(os.path.abspath(args.config))
         
-        # Convert to NSIS
-        if args.verbose:
-            print(f"Converting YAML to NSIS script...")
-        converter = YamlToNsisConverter(config)
+        # Select converter based on format
+        if args.format == "nsis":
+            if args.verbose:
+                print("Converting YAML to NSIS script...")
+            converter = YamlToNsisConverter(config)
+        elif args.format == "wix":
+            print("Error: 'wix' format is not supported yet. Coming soon.", file=sys.stderr)
+            sys.exit(1)
+        else:
+            print(f"Error: Unsupported format '{args.format}'", file=sys.stderr)
+            sys.exit(1)
         
         # Save NSIS script
         if args.verbose:
             print(f"Saving NSIS script to {args.output}...")
         converter.save(args.output)
         
-        print(f"✓ Generated NSIS script: {args.output}")
+        print(f"Generated NSIS script: {args.output}")
         
         # Build installer if requested
         if args.build:
@@ -89,7 +102,7 @@ def main():
                     print(result.stdout)
                 
                 installer_name = f"{config.app.name}-{config.app.version}-Setup.exe"
-                print(f"✓ Built installer: {installer_name}")
+                print(f"Built installer: {installer_name}")
                 
             except FileNotFoundError:
                 print(f"Error: makensis not found. Please install NSIS or specify path with --makensis", file=sys.stderr)

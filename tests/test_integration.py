@@ -6,7 +6,7 @@ import unittest
 import tempfile
 import os
 from xswl_yaml_nsis.config import PackageConfig
-from xswl_yaml_nsis.converter import YamlToNsisConverter
+from xswl_yaml_nsis.converters.convert_nsis import YamlToNsisConverter
 
 
 class TestIntegration(unittest.TestCase):

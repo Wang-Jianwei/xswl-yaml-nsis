@@ -4,7 +4,7 @@ Unit tests for xswl-yaml-nsis NSIS converter
 
 import unittest
 from xswl_yaml_nsis.config import PackageConfig, AppInfo, InstallConfig, FileEntry, PackageEntry
-from xswl_yaml_nsis.converter import YamlToNsisConverter
+from xswl_yaml_nsis.converters.convert_nsis import YamlToNsisConverter
 
 
 class TestYamlToNsisConverter(unittest.TestCase):

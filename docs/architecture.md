@@ -57,7 +57,7 @@ flowchart LR
 ## 关键步骤说明 🔍
 
 - 加载配置：使用 `PackageConfig.from_yaml` 将 YAML 文件解析为结构化对象（`AppInfo`、`InstallConfig`、`FileEntry` 等）。
-- 转换器：`YamlToNsisConverter` 负责把配置映射成 NSIS 脚本的多个节（header、UI、installer、uninstaller 等），通过 `convert()` 返回完整脚本字符串，`save()` 写入文件。
+- 转换器：`YamlToNsisConverter` 负责把配置映射成 NSIS 脚本的多个节（header、UI、installer、uninstaller 等），通过 `convert()` 返回完整脚本字符串，`save()` 写入文件。实现位于 `xswl_yaml_nsis/converters/convert_nsis.py`，便于后续扩展其他打包工具。
 - 变量替换：模板字符串中会替换 `${APP_NAME}`、`${APP_VERSION}`、`${APP_PUBLISHER}` 等占位符。
 - 可选行为：如果开启 `signing`，会在脚本中加入 `!finalize` 签名命令；如果执行 `--build`，CLI 会调用 `makensis` 来生成安装程序。
 
@@ -92,14 +92,14 @@ packages:
 CLI:
 
 ```
-python -m xswl_yaml_nsis.cli examples/simple.yaml -o dist/installer.nsi --build --makensis C:\Program Files (x86)\NSIS\makensis.exe -v
+python -m xswl_yaml_nsis.cli examples/simple.yaml --format nsis -o dist/installer.nsi --build --makensis C:\Program Files (x86)\NSIS\makensis.exe -v
 ```
 
 库 API:
 
 ```python
 from xswl_yaml_nsis.config import PackageConfig
-from xswl_yaml_nsis.converter import YamlToNsisConverter
+from xswl_yaml_nsis.converters.convert_nsis import YamlToNsisConverter
 
 cfg = PackageConfig.from_yaml("examples/simple.yaml")
 conv = YamlToNsisConverter(cfg)
