@@ -58,21 +58,26 @@
 ## 🚀 优先级排序（按 config.py 工作量）
 
 ### Phase 0（0.5-1h） - 最小改动，快速验证
+
 ```python
 # 在 PackageConfig 中添加
 languages: List[str] = field(default_factory=lambda: ["English"])
 ```
+
 → 多语言配置立即支持
 
 ### Phase 1（3-4h） - 高频需求，立即优先
+
 1. `EnvVarEntry` 数据类（环境变量）
 2. 更新 `from_yaml()` 和 `from_dict()` 解析
 
 ### Phase 2（2-3h） - 扩展现有配置
+
 1. `UpdateConfig` 新增字段
 2. `SigningConfig` 新增字段
 
 ### Phase 3（6-8h） - 新增次要功能
+
 1. `SystemRequirements` 数据类
 2. `LoggingConfig` 数据类
 3. `FileAssociation` 数据类
@@ -83,11 +88,13 @@ languages: List[str] = field(default_factory=lambda: ["English"])
 ## 📝 Config.py 改动检查清单
 
 ### Phase 0 - 多语言
+
 - [x] 在 `PackageConfig` 中添加 `languages: List[str]` 字段
 - [x] 在 `from_yaml()` 和 `from_dict()` 中解析该字段
 - [x] 更新示例 YAML
 
 #### 示例 / Example
+
 在 YAML 中添加 `languages` 字段以启用多语言生成：
 
 ```yaml
@@ -111,6 +118,7 @@ languages:
 说明：转换器会为每个语言输出 `!insertmacro MUI_LANGUAGE "<lang>"`，默认回退到 `English`。
 
 ### Phase 1 - 环境变量
+
 - [x] 创建 `EnvVarEntry` 数据类
 - [x] 在 `InstallConfig` 中添加 `env_vars: List[EnvVarEntry]` 字段
 - [x] 在 `from_yaml()` 中解析
@@ -120,17 +128,25 @@ languages:
 说明：支持 `PATH` 的 `append: true` 行为，包含基本归一化（分隔符归一、去重、大小写规范化的尝试）与卸载时的精确移除逻辑。
 
 ### Phase 2 - 升级和安全
-- [ ] 在 `UpdateConfig` 中添加字段：
+
+- [x] 在 `UpdateConfig` 中添加字段：
   - `download_url: str`
   - `backup_on_upgrade: bool`
   - `repair_enabled: bool`
-- [ ] 在 `SigningConfig` 中添加字段：
+- [x] 在 `SigningConfig` 中添加字段：
   - `verify_signature: bool`
   - `checksum_type: str`
   - `checksum_value: str`
-- [ ] 更新解析逻辑
+- [x] 更新解析逻辑
+
+说明：
+
+- `UpdateConfig` 新增字段会被写入安装时的注册表（`UpdateURL`, `DownloadURL`, `BackupOnUpgrade`, `RepairEnabled`），供应用读取以实现自动更新/备份/修复流程。
+- `UpdateConfig` 现在支持可配置注册表目标：`registry_hive`（`HKLM` 或 `HKCU`）和 `registry_key`（自定义注册表路径），可用于写入 per-user 或 system-wide 的更新元数据。
+- `SigningConfig` 新增字段用于在生成的脚本中记录是否要进行签名后的校验（`verify_signature`）以及校验使用的 `checksum_type`/`checksum_value`（仅记录于安装脚本注释，由外部流程负责实际校验）。
 
 ### Phase 3 - 系统要求、日志、文件关联、下载
+
 - [ ] 创建 `SystemRequirements` 数据类
 - [ ] 创建 `LoggingConfig` 数据类
 - [ ] 创建 `FileAssociation` 数据类
@@ -147,16 +163,19 @@ languages:
 ## 🎯 立即建议
 
 ### 本周（立即）
+
 1. ✅ **完成本评审**（已做）
 2. ☐ **启动 Phase 0**（0.5-1h，快速赢）
 3. ☐ **规划 Phase 1-3** 优先级（与团队讨论）
 
 ### 下周（1 周内）
+
 1. ☐ **完成 Phase 0-1** 的 config.py 改动（~4h）
 2. ☐ 编写测试和示例
 3. ☐ **发布 v1.1** 或 **v2.0-beta**（新增配置字段）
 
 ### 后续
+
 1. ☐ Phase 2-3 逐步实现
 2. ☐ Converter 适配跟上
 3. ☐ 发布完整版本

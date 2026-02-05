@@ -99,6 +99,34 @@ class TestYamlToNsisConverter(unittest.TestCase):
         converter = YamlToNsisConverter(self.simple_config)
         section = converter._generate_update_section()
         self.assertEqual(len(section), 0)
+
+    def test_update_section_extended(self):
+        """Extended update fields should be emitted into the update section"""
+        from ypack.config import UpdateConfig
+        config = self.simple_config
+        config.update = UpdateConfig(enabled=True, update_url="https://upd", download_url="https://dl", backup_on_upgrade=True, repair_enabled=False)
+        section = "\n".join(YamlToNsisConverter(config)._generate_update_section())
+        self.assertIn('!define UPDATE_URL "https://upd"', section)
+        self.assertIn('!define DOWNLOAD_URL "https://dl"', section)
+        self.assertIn('WriteRegStr HKLM "${REG_KEY}" "BackupOnUpgrade" "${BACKUP_ON_UPGRADE}"', section)
+        self.assertIn('WriteRegStr HKLM "${REG_KEY}" "RepairEnabled" "${REPAIR_ENABLED}"', section)
+
+    def test_update_registry_scope_and_key(self):
+        """Update section should honor registry_hive and registry_key settings"""
+        from ypack.config import UpdateConfig
+        config = self.simple_config
+        config.update = UpdateConfig(enabled=True, update_url="https://upd", download_url="https://dl", registry_hive="HKCU", registry_key="Software\\MyAppUpdate")
+        section = "\n".join(YamlToNsisConverter(config)._generate_update_section())
+        self.assertIn('WriteRegStr HKCU "Software\\MyAppUpdate" "UpdateURL" "${UPDATE_URL}"', section)
+        self.assertIn('WriteRegStr HKCU "Software\\MyAppUpdate" "DownloadURL" "${DOWNLOAD_URL}"', section)
+    def test_signing_section_extended(self):
+        """Extended signing fields should be emitted into the signing section"""
+        from ypack.config import SigningConfig
+        config = self.simple_config
+        config.signing = SigningConfig(enabled=True, certificate="c", password="p", timestamp_url="t", verify_signature=True, checksum_type="sha256", checksum_value="abc")
+        section = "\n".join(YamlToNsisConverter(config)._generate_signing_section())
+        self.assertIn('Verify signature after build: True', section)
+        self.assertIn('Checksum: sha256 abc', section)
     
     def test_packages_without_components(self):
         """Test that converter works without packages (backward compatible)"""

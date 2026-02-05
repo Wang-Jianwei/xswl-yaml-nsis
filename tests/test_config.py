@@ -130,6 +130,32 @@ class TestPackageConfig(unittest.TestCase):
         self.assertTrue(config.update.enabled)
         self.assertEqual(config.update.update_url, "https://example.com/updates")
 
+    def test_update_and_signing_extended_fields(self):
+        """Test parsing of extended update and signing fields"""
+        data = self.test_yaml.copy()
+        data["update"] = {
+            "enabled": True,
+            "update_url": "https://example.com/updates",
+            "download_url": "https://example.com/download",
+            "backup_on_upgrade": True,
+            "repair_enabled": True,
+        }
+        data["signing"] = {
+            "enabled": True,
+            "certificate": "cert.pfx",
+            "password": "pwd",
+            "timestamp_url": "http://timestamp",
+            "verify_signature": True,
+            "checksum_type": "sha256",
+            "checksum_value": "deadbeef"
+        }
+        config = PackageConfig.from_dict(data)
+        self.assertTrue(config.update.download_url, "https://example.com/download")
+        self.assertTrue(config.update.backup_on_upgrade)
+        self.assertTrue(config.update.repair_enabled)
+        self.assertTrue(config.signing.verify_signature)
+        self.assertEqual(config.signing.checksum_type, "sha256")
+        self.assertEqual(config.signing.checksum_value, "deadbeef")
     def test_languages_default_and_custom(self):
         """Test default languages and custom language list from dict"""
         config = PackageConfig.from_dict(self.test_yaml)

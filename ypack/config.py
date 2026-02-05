@@ -209,6 +209,9 @@ class SigningConfig:
     certificate: str = ""
     password: str = ""
     timestamp_url: str = "http://timestamp.digicert.com"
+    verify_signature: bool = False
+    checksum_type: str = ""
+    checksum_value: str = ""
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SigningConfig":
@@ -216,7 +219,10 @@ class SigningConfig:
             enabled=data.get("enabled", False),
             certificate=data.get("certificate", ""),
             password=data.get("password", ""),
-            timestamp_url=data.get("timestamp_url", "http://timestamp.digicert.com")
+            timestamp_url=data.get("timestamp_url", "http://timestamp.digicert.com"),
+            verify_signature=data.get("verify_signature", False),
+            checksum_type=data.get("checksum_type", ""),
+            checksum_value=data.get("checksum_value", "")
         )
 
 
@@ -225,14 +231,25 @@ class UpdateConfig:
     """Auto-update configuration"""
     enabled: bool = False
     update_url: str = ""
+    download_url: str = ""
+    backup_on_upgrade: bool = False
+    repair_enabled: bool = False
     check_on_startup: bool = True
+    # Registry settings for update metadata (allow writing to HKCU/HKLM and custom key)
+    registry_hive: str = "HKLM"
+    registry_key: str = "${REG_KEY}"
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "UpdateConfig":
         return cls(
             enabled=data.get("enabled", False),
             update_url=data.get("update_url", ""),
-            check_on_startup=data.get("check_on_startup", True)
+            download_url=data.get("download_url", ""),
+            backup_on_upgrade=data.get("backup_on_upgrade", False),
+            repair_enabled=data.get("repair_enabled", False),
+            check_on_startup=data.get("check_on_startup", True),
+            registry_hive=data.get("registry_hive", "HKLM"),
+            registry_key=data.get("registry_key", "${REG_KEY}")
         )
 
 

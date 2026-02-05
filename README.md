@@ -177,12 +177,10 @@ install:
 ### 文件配置 / Files Configuration
 
 > 说明：从 v0.x 起，**仅当 source 模式包含 `**`（例如 `dir/**/*`）时，转换器会把该条目视为递归（生成 `File /r`）。**
-> 
+>
 > - `dir/*` 仅匹配当前目录的直接子项（非递归）。
 > - `dir/**/*` 会递归匹配所有子目录和文件（生成 `File /r`）。
 > - `recursive` 字段仍然兼容但已不推荐使用；建议使用 `**` 明确表达递归意图。
-
-
 
 ```yaml
 files:
@@ -216,8 +214,22 @@ signing:
 update:
   enabled: true
   update_url: "https://example.com/updates/latest.json"
+  download_url: "https://example.com/downloads/latest.exe"  # 可选：下载安装包的 URL
+  backup_on_upgrade: true     # 可选：在升级前备份旧版本
+  repair_enabled: true        # 可选：启用修复模式
   check_on_startup: true
+  # 可选：写入注册表的 Hive 与 Key
+  registry_hive: "HKCU"      # HKLM (系统范围，需要管理员) 或 HKCU (当前用户)
+  registry_key: "Software\\MyCompany\\MyApp"  # 可选自定义注册表路径
 ```
+
+说明：
+
+- `update_url`：应用用于检查更新的 URL（例如 JSON 元数据）。
+- `download_url`：可选，实际的安装包下载地址（安装器会把该值写入注册表供应用使用）。
+- `backup_on_upgrade`：若为 `true`，安装器会将当前安装备份以便回滚（应用需要在运行时实现具体逻辑）。
+- `repair_enabled`：若为 `true`，安装器会在注册表写入相应标志，应用或用户可使用此标志触发修复流程。
+- `registry_hive` / `registry_key`：可配置在安装时写入更新元数据的注册表位置。默认写入 `HKLM ${REG_KEY}`，若设置为 `HKCU` 则会写入当前用户范围（无需管理员权限）。
 
 ### 自定义 NSIS 脚本 / Custom NSIS Includes (可选 / Optional)
 
