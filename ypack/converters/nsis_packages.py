@@ -243,11 +243,26 @@ def _generate_existing_install_check(ctx: BuildContext) -> List[str]:
     cfg = ctx.config
     has_logging = bool(cfg.logging and cfg.logging.enabled)
 
+    # When allow_multiple is True we intentionally DO NOT perform a
+    # directory-specific existence check in .onInit (because $INSTDIR is
+    # still the default path). Instead we defer the check until the user
+    # has chosen an installation directory (directory page leave callback).
+    if ei.allow_multiple:
+        lines: List[str] = [
+            "",
+            "  ; ------------------------------------------------------------------",
+            "  ; Existing-install detection (deferred to directory page because allow_multiple=true)",
+            "  ; ------------------------------------------------------------------",
+            "  ; NOTE: Actual path collision detection will run in Function ExistingInstall_DirLeave",
+        ]
+        return lines
+
     lines: List[str] = [
         "",
         "  ; ------------------------------------------------------------------",
         "  ; Existing-install detection",
         "  ; ------------------------------------------------------------------",
+        f'  SetRegView {ctx.effective_reg_view}',
         '  ReadRegStr $R0 HKLM "${REG_KEY}" "InstallPath"',
         '  StrCmp $R0 "" _ei_done  ; No previous install registered',
     ]
@@ -391,7 +406,151 @@ def _generate_existing_install_check(ctx: BuildContext) -> List[str]:
     ])
 
     lines.append('_ei_done:')
+    lines.append(f'  SetRegView lastused')
     lines.append('')
+    return lines
+
+
+def generate_existing_install_helpers(ctx: BuildContext) -> List[str]:
+    """Emit helper functions for existing-install handling.
+
+    When ``allow_multiple`` is true we generate a directory-page leave
+    callback function that checks the *selected* $INSTDIR for an existing
+    installation and performs the same prompting/uninstall logic used in
+    the .onInit flow.
+    """
+    ei = ctx.config.install.existing_install
+    if not ei or ei.mode == "none" or not ei.allow_multiple:
+        return []
+
+    cfg = ctx.config
+    has_logging = bool(cfg.logging and cfg.logging.enabled)
+
+    lines: List[str] = [
+        "",
+        "  ; ------------------------------------------------------------------",
+        "  ; Existing-install helpers (directory page leave callback)",
+        "  ; ------------------------------------------------------------------",
+        "Function ExistingInstall_DirLeave",
+        "",
+        f'  SetRegView {ctx.effective_reg_view}',
+        "  ; Check the user-selected directory ($INSTDIR) for an uninstaller",
+        '  StrCpy $R1 $INSTDIR',
+        '  IfFileExists "$R1\\Uninstall.exe" _eid_has_uninst _eid_check_reg',
+        '  Goto _eid_done',
+        '',
+        '_eid_check_reg:',
+        '  ; Also consider the registered install path as a match',
+        '  ReadRegStr $R0 HKLM "${REG_KEY}" "InstallPath"',
+        '  StrCmp $R0 "$R1" 0 _eid_done',
+        '',
+        '_eid_has_uninst:',
+    ]
+
+    # Optionally read installed version for prompts / version check
+    if ei.version_check or ei.show_version_info:
+        lines.append('  ReadRegStr $R2 HKLM "${REG_KEY}" "Version"')
+
+    # Prompt / behavior
+    if ei.mode == "prompt_uninstall":
+        if ei.show_version_info:
+            lines.extend([
+                '  StrCmp $R2 "" _eid_prompt_no_ver 0',
+                '  MessageBox MB_YESNO|MB_ICONQUESTION "An existing installation (version $R2) was found at:$\\r$\\n$R1$\\r$\\n\\r$\\nUninstall it first and continue?" IDYES _eid_do_uninstall IDNO _eid_cancel',
+                '  Goto _eid_prompt_done',
+                '_eid_prompt_no_ver:',
+                '  MessageBox MB_YESNO|MB_ICONQUESTION "An existing installation was found at:$\\r$\\n$R1$\\r$\\n\\r$\\nUninstall it first and continue?" IDYES _eid_do_uninstall IDNO _eid_cancel',
+                '_eid_prompt_done:',
+            ])
+        else:
+            lines.append('  MessageBox MB_YESNO|MB_ICONQUESTION "An existing installation was found at:$\\r$\\n$R1$\\r$\\n\\r$\\nUninstall it first and continue?" IDYES _eid_do_uninstall IDNO _eid_cancel')
+    elif ei.mode == "auto_uninstall":
+        lines.append('  Goto _eid_do_uninstall')
+    elif ei.mode == "abort":
+        if ei.show_version_info:
+            lines.extend([
+                '  StrCmp $R2 "" _eid_abort_no_ver 0',
+                '  MessageBox MB_OK|MB_ICONSTOP "An existing installation (version $R2) was found at $R1. Installation aborted."',
+                '  Goto _eid_cancel',
+                '_eid_abort_no_ver:',
+                '  MessageBox MB_OK|MB_ICONSTOP "An existing installation was found at $R1. Installation aborted."',
+                '  Goto _eid_cancel',
+            ])
+        else:
+            lines.extend([
+                '  MessageBox MB_OK|MB_ICONSTOP "An existing installation was found at $R1. Installation aborted."',
+                '  Goto _eid_cancel',
+            ])
+    elif ei.mode == "overwrite":
+        lines.append('  Goto _eid_done  ; Overwrite mode: skip uninstall')
+
+    # Uninstall execution and wait loop
+    uninst_args = ei.uninstaller_args or "/S"
+    wait_ms = ei.uninstall_wait_ms
+
+    if wait_ms is not None and int(wait_ms) < 0:
+        lines.extend([
+            '_eid_do_uninstall:',
+        ])
+        if has_logging:
+            lines.append(f'  !insertmacro LogWrite "Running existing uninstaller: $R1\\Uninstall.exe {uninst_args}"')
+            lines.append('  !insertmacro LogWrite "Waiting for uninstaller to finish (no timeout)"')
+        lines.extend([
+            f'  ExecWait \'$R1\\Uninstall.exe {uninst_args}\'',
+            '  ; Wait for uninstaller to finish (no timeout)',
+            '_eid_wait_loop:',
+            '  Sleep 500',
+            '  IfFileExists "$R1\\Uninstall.exe" _eid_wait_loop _eid_wait_done',
+            '_eid_wait_done:',
+        ])
+        if has_logging:
+            lines.append('  !insertmacro LogWrite "Uninstaller finished."')
+        lines.extend([
+            '  ; Verify uninstaller is gone',
+            '  IfFileExists "$R1\\Uninstall.exe" 0 _eid_done',
+            '  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "The previous uninstaller did not finish.  Retry or cancel installation?" IDRETRY _eid_do_uninstall IDCANCEL _eid_cancel',
+        ])
+    else:
+        lines.extend([
+            '_eid_do_uninstall:',
+        ])
+        if has_logging:
+            lines.append(f'  !insertmacro LogWrite "Running existing uninstaller: $R1\\Uninstall.exe {uninst_args}"')
+            lines.append(f'  !insertmacro LogWrite "Waiting for uninstaller to finish (up to {wait_ms}ms)"')
+        lines.extend([
+            f'  ExecWait \'$R1\\Uninstall.exe {uninst_args}\'',
+            f'  ; Wait for uninstaller to finish (up to {wait_ms}ms)',
+            '  StrCpy $R3 0',
+            "_eid_wait_loop:",
+            f'  ; Loop: if $R3 >= {wait_ms} goto _eid_wait_done, else continue waiting',
+            f'  IntCmp $R3 {wait_ms} _eid_wait_done _eid_wait_done _eid_wait_continue',
+            '_eid_wait_continue:',
+            '  Sleep 500',
+            '  IntOp $R3 $R3 + 500',
+            '  IfFileExists "$R1\\Uninstall.exe" _eid_wait_loop _eid_wait_done',
+            '_eid_wait_done:',
+        ])
+        if has_logging:
+            lines.append('  !insertmacro LogWrite "Uninstaller finished."')
+        lines.extend([
+            '  ; Verify uninstaller is gone',
+            '  IfFileExists "$R1\\Uninstall.exe" 0 _eid_done',
+            '  !insertmacro LogWrite "Uninstaller did not finish within timeout."',
+            '  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "The previous uninstaller did not finish.  Retry or cancel installation?" IDRETRY _eid_do_uninstall IDCANCEL _eid_cancel',
+        ])
+
+    lines.extend([
+        '',
+        '_eid_cancel:',
+        '  Abort',
+        '',
+        '_eid_done:',
+        '  SetRegView lastused',
+        '',
+        'FunctionEnd',
+        '',
+    ])
+
     return lines
 
 

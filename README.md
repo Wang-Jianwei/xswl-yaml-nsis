@@ -147,6 +147,10 @@ install:
   launch_in_background: true
   silent_install: false
   installer_name: "${app.name}-${app.version}-Setup.exe"  # 可选：自定义安装包文件名（可被 CLI 的 --installer-name 覆盖）
+  # Application registry key — 安装器用此路径存储 InstallPath、Version，
+  # 也用于 InstallDirRegKey 和已存在安装检测。支持 ${app.xxx} 变量。
+  # 默认值：Software\{publisher}\{app_name}（行业惯例）
+  registry_key: "Software\\${app.publisher}\\${app.name}"
   # Existing-install behavior (string shorthand or object):
   existing_install:
     mode: "prompt_uninstall"   # prompt_uninstall | auto_uninstall | overwrite | abort | none

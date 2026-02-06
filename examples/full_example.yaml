@@ -56,6 +56,10 @@ install:
   launch_on_finish_label: "立即启动 MyApp"         # 复选框显示文字（可选）
   launch_in_background: false                      # 启动时是否在后台运行（false 可等待执行完成）
   installer_name: "${app.name}-${app.version}-Setup.exe"  # 可选：自定义安装包文件名。可被 CLI --installer-name 覆盖
+  # Application registry key — used for install detection, version storage,
+  # and InstallDirRegKey. Supports ${app.xxx} variable substitution.
+  # Default: "Software\{publisher}\{app_name}"
+  registry_key: "Software\\${app.publisher}\\${app.name}"
   # Behavior when an existing installation is detected at the target location.
   # Supports two formats:
   #

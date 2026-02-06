@@ -393,8 +393,15 @@ class TestOnInit:
         cfg = _simple_config()
         cfg.install.existing_install = ExistingInstallConfig(mode="prompt_uninstall", allow_multiple=True)
         script = YamlToNsisConverter(cfg).convert()
-        assert 'allow_multiple: only conflict when installing to the same directory' in script
-        assert 'StrCmp $R0 "$INSTDIR" 0 _ei_done' in script
+        # When allow_multiple is true we defer path checks to the directory page
+        assert 'Existing-install detection (deferred to directory page because allow_multiple=true)' in script
+        # Directory page should be wired to call our callback
+        assert '!define MUI_PAGE_CUSTOMFUNCTION_LEAVE ExistingInstall_DirLeave' in script
+        # The onInit path-compare should NOT be present
+        assert 'StrCmp $R0 "$INSTDIR" 0 _ei_done' not in script
+        # And the callback function should be present and check the chosen directory
+        assert 'Function ExistingInstall_DirLeave' in script
+        assert 'IfFileExists "$R1\\Uninstall.exe"' in script
 
     def test_allow_multiple_legacy_field(self):
         """Legacy allow_multiple_installations should set allow_multiple."""
@@ -504,6 +511,68 @@ class TestARPRegistry:
         cfg = _simple_config(app={"name": "T", "version": "1", "install_icon": "logo.ico"})
         script = YamlToNsisConverter(cfg).convert()
         assert '"DisplayIcon"' in script
+
+
+class TestRegistryKey:
+    """Tests for configurable REG_KEY."""
+
+    def test_default_reg_key_includes_publisher(self):
+        """Default REG_KEY should be Software\\{publisher}\\{app_name}."""
+        cfg = _simple_config()
+        script = YamlToNsisConverter(cfg).convert()
+        assert '!define REG_KEY "Software\\Pub\\TestApp"' in script
+
+    def test_custom_registry_key(self):
+        """User-specified registry_key should override the default."""
+        cfg = PackageConfig.from_dict({
+            "app": {"name": "MyApp", "version": "1.0", "publisher": "ACME"},
+            "install": {"registry_key": "Software\\Custom\\Path"},
+            "files": [{"source": "t.exe"}],
+        })
+        script = YamlToNsisConverter(cfg).convert()
+        assert '!define REG_KEY "Software\\Custom\\Path"' in script
+
+    def test_registry_key_variable_resolution(self):
+        """registry_key should support ${app.xxx} variable resolution."""
+        cfg = PackageConfig.from_dict({
+            "app": {"name": "Foo", "version": "2.0", "publisher": "Bar"},
+            "install": {"registry_key": "Software\\${app.publisher}\\${app.name}"},
+            "files": [{"source": "t.exe"}],
+        })
+        script = YamlToNsisConverter(cfg).convert()
+        assert '!define REG_KEY "Software\\Bar\\Foo"' in script
+
+    def test_reg_key_used_in_install_detection(self):
+        """REG_KEY should be used for existing-install detection."""
+        cfg = _simple_config()
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'ReadRegStr $R0 HKLM "${REG_KEY}" "InstallPath"' in script
+
+    def test_reg_key_used_for_installdir(self):
+        """REG_KEY should be used in InstallDirRegKey."""
+        cfg = _simple_config()
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'InstallDirRegKey HKLM "${REG_KEY}" "InstallPath"' in script
+
+    def test_reg_key_writes_use_64bit_view(self):
+        cfg = _simple_config()
+        script = YamlToNsisConverter(cfg).convert()
+        # Ensure SetRegView 64 appears before writing the REG_KEY entries
+        idx_set = script.index('SetRegView 64')
+        idx_write = script.index('WriteRegStr HKLM "${REG_KEY}" "InstallPath"')
+        assert idx_set < idx_write
+
+    def test_reg_key_delete_uses_64bit_view(self):
+        cfg = _simple_config()
+        cfg.logging = LoggingConfig(enabled=True, path="$INSTDIR\\install.log")
+        script = YamlToNsisConverter(cfg).convert()
+        # In uninstall, SetRegView 64 should appear before DeleteRegKey HKLM "${REG_KEY}"
+        start = script.index('Section "Uninstall"')
+        end = script.index('FunctionEnd', start)
+        uninstall_block = script[start:end]
+        assert 'SetRegView 64' in uninstall_block
+        assert 'DeleteRegKey HKLM "${REG_KEY}"' in uninstall_block
+        assert uninstall_block.index('SetRegView 64') < uninstall_block.index('DeleteRegKey HKLM "${REG_KEY}"')
 
 
 class TestConverterRegistry:

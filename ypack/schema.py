@@ -116,6 +116,8 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 "launch_on_finish_label": _STRING,
                 "launch_in_background": _BOOL,
                 "silent_install": _BOOL,
+                "registry_key": _STRING,
+                "registry_view": {"type": "string", "enum": ["auto", "32", "64"], "default": "auto"},
                 "existing_install": {
                     "oneOf": [
                         {"type": "string", "enum": ["prompt_uninstall", "auto_uninstall", "overwrite", "abort", "none"]},

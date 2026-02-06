@@ -260,6 +260,12 @@ class InstallConfig:
     launch_in_background: bool = True
     silent_install: bool = False
     installer_name: str = ""
+    # Application registry key — used for install detection, version storage,
+    # and InstallDirRegKey. Defaults to "Software\{publisher}\{app_name}".
+    registry_key: str = ""
+    # Registry view for the application key and ARP entries.
+    # "64" = 64-bit view, "32" = 32-bit view, "auto" = derive from install_dir.
+    registry_view: str = "auto"
     # Rich existing-install detection policy
     existing_install: Optional[ExistingInstallConfig] = field(default_factory=ExistingInstallConfig)
 
@@ -293,7 +299,7 @@ class InstallConfig:
             ei.allow_multiple = True
 
         return cls(
-            install_dir=data.get("install_dir", "$PROGRAMFILES64\\${APP_NAME}"),
+            install_dir=data.get("install_dir", "$PROGRAMFILES64\\${app.name}"),
             desktop_shortcut_target=data.get("desktop_shortcut_target", ""),
             start_menu_shortcut_target=data.get("start_menu_shortcut_target", ""),
             registry_entries=registry_entries,
@@ -305,6 +311,8 @@ class InstallConfig:
             launch_in_background=data.get("launch_in_background", True),
             silent_install=data.get("silent_install", False),
             installer_name=data.get("installer_name", ""),
+            registry_key=data.get("registry_key", ""),
+            registry_view=data.get("registry_view", "auto"),
             existing_install=ei,
         )
 

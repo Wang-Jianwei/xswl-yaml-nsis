@@ -20,6 +20,7 @@ from .nsis_header import (
 )
 from .nsis_helpers import generate_checksum_helper, generate_log_macros, generate_path_helpers
 from .nsis_packages import (
+    generate_existing_install_helpers,
     generate_oninit,
     generate_uninit,
     generate_package_sections,
@@ -70,6 +71,9 @@ class YamlToNsisConverter(BaseConverter):
         parts.extend(generate_installer_section(self.ctx))
         parts.extend(generate_package_sections(self.ctx))
         parts.extend(generate_uninstaller_section(self.ctx))
+
+        # Existing-install helper functions (may be referenced by UI callbacks)
+        parts.extend(generate_existing_install_helpers(self.ctx))
 
         # .onInit / un.onInit
         parts.extend(generate_oninit(self.ctx))

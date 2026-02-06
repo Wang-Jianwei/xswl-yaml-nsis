@@ -120,8 +120,10 @@ def generate_installer_section(ctx: BuildContext) -> List[str]:
         lines.append("")
 
     # --- Standard registry (Add/Remove Programs) ---
+    reg_view = ctx.effective_reg_view
     lines.extend([
-        "  ; Application registry entries",
+        f"  ; Application registry entries (using {reg_view}-bit registry view)",
+        f'  SetRegView {reg_view}',
         '  WriteRegStr HKLM "${REG_KEY}" "InstallPath" "$INSTDIR"',
         '  WriteRegStr HKLM "${REG_KEY}" "Version" "${APP_VERSION}"',
         '',
@@ -140,6 +142,7 @@ def generate_installer_section(ctx: BuildContext) -> List[str]:
         lines.append('  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "DisplayIcon" "$INSTDIR\\${MUI_ICON}"')
     else:
         lines.append('  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "DisplayIcon" "$INSTDIR\\Uninstall.exe,0"')
+    lines.append('  SetRegView lastused')
     lines.append('')
 
     if has_logging:
@@ -165,7 +168,9 @@ def generate_installer_section(ctx: BuildContext) -> List[str]:
     lines.append("  ; Calculate installed size")
     lines.append('  ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2')
     lines.append('  IntFmt $0 "0x%08X" $0')
+    lines.append(f'  SetRegView {reg_view}')
     lines.append('  WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "EstimatedSize" $0')
+    lines.append('  SetRegView lastused')
     lines.append("")
 
     # --- Logging: end ---
@@ -258,21 +263,41 @@ def generate_uninstaller_section(ctx: BuildContext) -> List[str]:
     # Remove standard registry keys
     if has_logging:
         lines.append('  !insertmacro LogWrite "Removing registry entries ..."')
+    reg_view = ctx.effective_reg_view
     lines.extend([
         "  ; Remove registry entries",
+        f'  SetRegView {reg_view}',
         '  DeleteRegKey HKLM "${REG_KEY}"',
         '  DeleteRegKey HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}"',
+        '  SetRegView lastused',
         "",
     ])
 
     # Remove custom registry values
-    for entry in cfg.install.registry_entries:
-        key = ctx.resolve(entry.key)
-        if entry.view in ("32", "64"):
-            lines.append(f"  SetRegView {entry.view}")
-        lines.append(f'  DeleteRegValue {entry.hive} "{key}" "{entry.name}"')
     if cfg.install.registry_entries:
-        lines.append("  SetRegView lastused")
+        lines.append("  ; Remove custom registry entries")
+        current_view: Optional[str] = None
+        # Track which keys we've deleted values from, so we can clean empty keys
+        keys_to_clean: List[tuple] = []  # (hive, key)
+        for entry in cfg.install.registry_entries:
+            key = ctx.resolve(entry.key)
+            target_view = entry.view if entry.view in ("32", "64") else None
+            if target_view != current_view:
+                if current_view is not None:
+                    lines.append("  SetRegView lastused")
+                if target_view is not None:
+                    lines.append(f"  SetRegView {target_view}")
+                current_view = target_view
+            lines.append(f'  DeleteRegValue {entry.hive} "{key}" "{entry.name}"')
+            if (entry.hive, key) not in keys_to_clean:
+                keys_to_clean.append((entry.hive, key))
+        if current_view is not None:
+            lines.append("  SetRegView lastused")
+        # Clean up empty registry keys left behind
+        if keys_to_clean:
+            lines.append("  ; Remove empty registry keys (only if no remaining values)")
+            for hive, key in keys_to_clean:
+                lines.append(f'  DeleteRegKey /ifempty {hive} "{key}"')
         lines.append("")
 
     # Remove file associations
@@ -304,29 +329,33 @@ def generate_uninstaller_section(ctx: BuildContext) -> List[str]:
 # -----------------------------------------------------------------------
 
 def _emit_registry_writes(ctx: BuildContext, lines: List[str]) -> None:
-    """Emit WriteRegStr / WriteRegDWORD for custom registry entries."""
+    """Emit WriteRegStr / WriteRegDWORD for custom registry entries.
+
+    Groups entries by registry view to minimize ``SetRegView`` toggles.
+    """
     entries = ctx.config.install.registry_entries
     if not entries:
         return
 
-    views_used: Set[str] = {e.view for e in entries if e.view not in ("auto", "")}
-    if len(views_used) > 1:
-        lines.append("  ; WARNING: registry entries use multiple SetRegView values")
-
     lines.append("  ; Custom registry entries")
+    current_view: Optional[str] = None
     for entry in entries:
         key = ctx.resolve(entry.key)
         value = ctx.resolve(entry.value)
-        if entry.view in ("32", "64"):
-            lines.append(f"  SetRegView {entry.view}")
+        target_view = entry.view if entry.view in ("32", "64") else None
+        if target_view != current_view:
+            if current_view is not None:
+                lines.append("  SetRegView lastused")
+            if target_view is not None:
+                lines.append(f"  SetRegView {target_view}")
+            current_view = target_view
         if entry.type == "dword":
             lines.append(f'  WriteRegDWORD {entry.hive} "{key}" "{entry.name}" {value}')
         elif entry.type == "expand":
             lines.append(f'  WriteRegExpandStr {entry.hive} "{key}" "{entry.name}" "{value}"')
         else:
             lines.append(f'  WriteRegStr {entry.hive} "{key}" "{entry.name}" "{value}"')
-    # Reset to default
-    if views_used:
+    if current_view is not None:
         lines.append("  SetRegView lastused")
     lines.append("")
 

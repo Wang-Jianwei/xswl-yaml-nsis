@@ -47,6 +47,27 @@ class BuildContext:
         """Return the path separator for the current target tool."""
         return _PATH_SEPARATORS.get(self.target_tool, "\\")
 
+    @property
+    def effective_reg_view(self) -> str:
+        """Resolve the effective registry view ('32' or '64').
+
+        When ``registry_view`` is ``"auto"`` we derive the view from
+        ``install_dir``:
+        * ``$PROGRAMFILES64`` → ``"64"``
+        * ``$PROGRAMFILES``   → ``"32"``
+        * Otherwise           → ``"64"`` (safe default on modern Windows)
+        """
+        view = self.config.install.registry_view
+        if view in ("32", "64"):
+            return view
+        # Auto-detect from install directory
+        install_dir = self.config.install.install_dir.upper()
+        if "$PROGRAMFILES64" in install_dir or "PROGRAMW6432" in install_dir:
+            return "64"
+        if "$PROGRAMFILES\\" in install_dir or install_dir.endswith("$PROGRAMFILES"):
+            return "32"
+        return "64"  # default for modern systems
+
     # ------------------------------------------------------------------
     # Variable resolution
     # ------------------------------------------------------------------

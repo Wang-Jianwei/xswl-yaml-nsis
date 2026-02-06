@@ -25,9 +25,16 @@ def generate_header(ctx: BuildContext) -> List[str]:
         f'!define APP_VERSION "{cfg.app.version}"',
         f'!define APP_PUBLISHER "{cfg.app.publisher}"',
         f'!define APP_DESCRIPTION "{cfg.app.description}"',
-        f'!define REG_KEY "Software\\{cfg.app.name}"',
-        "",
     ]
+
+    # REG_KEY: user-configurable application registry key.
+    # Default: Software\{publisher}\{app_name}  (industry standard).
+    reg_key = cfg.install.registry_key
+    if not reg_key:
+        reg_key = f"Software\\{cfg.app.publisher}\\{cfg.app.name}"
+    reg_key = ctx.resolve(reg_key)
+    lines.append(f'!define REG_KEY "{reg_key}"')
+    lines.append("")
 
     # MUI icon defines (must appear before !include MUI2.nsh)
     install_icon = cfg.app.install_icon
@@ -79,12 +86,13 @@ def generate_custom_includes(ctx: BuildContext) -> List[str]:
 def generate_general_settings(ctx: BuildContext) -> List[str]:
     """Name, OutFile, InstallDir, RequestExecutionLevel, license."""
     cfg = ctx.config
+    reg_view = ctx.effective_reg_view
     lines: List[str] = [
         "; --- General Settings ---",
         f'Name "${{APP_NAME}}"',
         f'OutFile "${{APP_NAME}}-${{APP_VERSION}}-Setup.exe"',
         f'InstallDir "{ctx.resolve(cfg.install.install_dir)}"',
-        'InstallDirRegKey HKLM "${REG_KEY}" "InstallPath"',
+        f'InstallDirRegKey HKLM "${{REG_KEY}}" "InstallPath"',
         'RequestExecutionLevel admin',
     ]
 
@@ -141,8 +149,22 @@ def generate_modern_ui(ctx: BuildContext) -> List[str]:
     if cfg.packages:
         lines.append("!insertmacro MUI_PAGE_COMPONENTS")
 
+    # If existing-install handling allows multiple installations, we
+    # defer path-specific checks until the user has chosen an install
+    # directory. Use a custom leave-callback on the directory page.
+    ei = cfg.install.existing_install
+    if ei and ei.allow_multiple:
+        lines.extend([
+            '!define MUI_PAGE_CUSTOMFUNCTION_LEAVE ExistingInstall_DirLeave',
+            '!insertmacro MUI_PAGE_DIRECTORY',
+            '!ifdef MUI_PAGE_CUSTOMFUNCTION_LEAVE',
+            '  !undef MUI_PAGE_CUSTOMFUNCTION_LEAVE',
+            '!endif',
+        ])
+    else:
+        lines.append("!insertmacro MUI_PAGE_DIRECTORY")
+
     lines.extend([
-        "!insertmacro MUI_PAGE_DIRECTORY",
         "!insertmacro MUI_PAGE_INSTFILES",
         "!insertmacro MUI_PAGE_FINISH",
         "",
