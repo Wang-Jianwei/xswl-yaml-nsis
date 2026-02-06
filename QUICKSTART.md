@@ -36,6 +36,10 @@ install:
   install_dir: "$PROGRAMFILES64\\MyApp"
   desktop_shortcut_target: "$INSTDIR\\MyApp.exe"
   start_menu_shortcut_target: "$INSTDIR\\MyApp.exe"
+  # existing_install controls behavior when a prior install is found (default: prompt_uninstall)
+  # Simple:   existing_install: "prompt_uninstall"
+  # Full:     existing_install: { mode: "prompt_uninstall", version_check: true, allow_multiple: false, uninstall_wait_ms: 15000 }
+  # Tip: set "uninstall_wait_ms: -1" to wait indefinitely for the previous uninstaller (use with caution)
 
 files:
   - MyApp.exe

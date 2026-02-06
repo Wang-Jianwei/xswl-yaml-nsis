@@ -116,6 +116,24 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 "launch_on_finish_label": _STRING,
                 "launch_in_background": _BOOL,
                 "silent_install": _BOOL,
+                "existing_install": {
+                    "oneOf": [
+                        {"type": "string", "enum": ["prompt_uninstall", "auto_uninstall", "overwrite", "abort", "none"]},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "mode": {"type": "string", "enum": ["prompt_uninstall", "auto_uninstall", "overwrite", "abort", "none"], "default": "prompt_uninstall"},
+                                "version_check": _BOOL,
+                                "allow_multiple": _BOOL,
+                                "uninstaller_args": _STRING,
+                                "show_version_info": _BOOL,
+                                "uninstall_wait_ms": _INT,
+                            },
+                        },
+                    ],
+                },
+                # Legacy field — prefer existing_install.allow_multiple
+                "allow_multiple_installations": _BOOL,
             },
         },
         "files": {"type": "array", "items": _FILE_ENTRY},

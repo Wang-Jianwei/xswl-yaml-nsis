@@ -21,6 +21,7 @@ from .nsis_header import (
 from .nsis_helpers import generate_checksum_helper, generate_log_macros, generate_path_helpers
 from .nsis_packages import (
     generate_oninit,
+    generate_uninit,
     generate_package_sections,
     generate_signing_section,
     generate_update_section,
@@ -70,8 +71,9 @@ class YamlToNsisConverter(BaseConverter):
         parts.extend(generate_package_sections(self.ctx))
         parts.extend(generate_uninstaller_section(self.ctx))
 
-        # .onInit
+        # .onInit / un.onInit
         parts.extend(generate_oninit(self.ctx))
+        parts.extend(generate_uninit(self.ctx))
 
         # Checksum / extract helpers (always emitted — lightweight stubs)
         has_remote = any(fe.is_remote for fe in self.config.files)

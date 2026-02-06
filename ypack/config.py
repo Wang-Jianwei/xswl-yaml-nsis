@@ -197,6 +197,51 @@ class LoggingConfig:
 
 
 # ---------------------------------------------------------------------------
+# ExistingInstallConfig — rich policy for existing-install detection
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ExistingInstallConfig:
+    """Policy for detecting and handling an existing installation.
+
+    Modes:
+    * ``prompt_uninstall`` – ask the user whether to uninstall first.
+    * ``auto_uninstall``   – silently uninstall previous install.
+    * ``overwrite``        – install over existing files.
+    * ``abort``            – refuse to install.
+    * ``none``             – skip detection entirely.
+    """
+    mode: str = "prompt_uninstall"
+    # Version comparison: skip detection when the installed version equals
+    # (or is older than) the current version.
+    version_check: bool = False
+    # Allow multiple independent installations in different directories.
+    allow_multiple: bool = False
+    # Extra CLI args to pass to the old uninstaller (e.g. "/S _?=$R1").
+    uninstaller_args: str = ""
+    # Show the installed version in the prompt dialog.
+    show_version_info: bool = True
+    # Wait (in ms) for the uninstaller to finish before continuing.
+    uninstall_wait_ms: int = 15000  # default to 15s — better for heavier uninstallers
+
+    @classmethod
+    def from_dict(cls, data: Any) -> ExistingInstallConfig:
+        # Backward compat: accept a plain string as shorthand for mode
+        if isinstance(data, str):
+            return cls(mode=data)
+        if not isinstance(data, dict):
+            return cls()
+        return cls(
+            mode=data.get("mode", "prompt_uninstall"),
+            version_check=data.get("version_check", False),
+            allow_multiple=data.get("allow_multiple", False),
+            uninstaller_args=data.get("uninstaller_args", ""),
+            show_version_info=data.get("show_version_info", True),
+            uninstall_wait_ms=int(data.get("uninstall_wait_ms", 5000)),
+        )
+
+
+# ---------------------------------------------------------------------------
 # InstallConfig — depends on the leaf types above
 # ---------------------------------------------------------------------------
 
@@ -215,6 +260,8 @@ class InstallConfig:
     launch_in_background: bool = True
     silent_install: bool = False
     installer_name: str = ""
+    # Rich existing-install detection policy
+    existing_install: Optional[ExistingInstallConfig] = field(default_factory=ExistingInstallConfig)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> InstallConfig:
@@ -238,6 +285,13 @@ class InstallConfig:
         if isinstance(sysreq_data, dict):
             sysreq = SystemRequirements.from_dict(sysreq_data)
 
+        # Parse existing_install — supports both string and dict
+        ei_raw = data.get("existing_install", "prompt_uninstall")
+        ei = ExistingInstallConfig.from_dict(ei_raw)
+        # Legacy: allow_multiple_installations -> existing_install.allow_multiple
+        if data.get("allow_multiple_installations"):
+            ei.allow_multiple = True
+
         return cls(
             install_dir=data.get("install_dir", "$PROGRAMFILES64\\${APP_NAME}"),
             desktop_shortcut_target=data.get("desktop_shortcut_target", ""),
@@ -251,6 +305,7 @@ class InstallConfig:
             launch_in_background=data.get("launch_in_background", True),
             silent_install=data.get("silent_install", False),
             installer_name=data.get("installer_name", ""),
+            existing_install=ei,
         )
 
 

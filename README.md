@@ -147,6 +147,19 @@ install:
   launch_in_background: true
   silent_install: false
   installer_name: "${app.name}-${app.version}-Setup.exe"  # 可选：自定义安装包文件名（可被 CLI 的 --installer-name 覆盖）
+  # Existing-install behavior (string shorthand or object):
+  existing_install:
+    mode: "prompt_uninstall"   # prompt_uninstall | auto_uninstall | overwrite | abort | none
+    version_check: false       # Skip if same version is already installed
+    allow_multiple: false      # Only detect conflict for the same target directory
+    show_version_info: true    # Show installed version in dialogs
+    uninstall_wait_ms: 5000    # Wait for old uninstaller to finish (ms); set to -1 to wait indefinitely (use with caution — installer will block until the old uninstaller exits)
+
+  # Suggestion: typical values by workload
+  #   - Desktop apps: 15000 (default)
+  #   - Services: 60000
+  #   - Drivers: 30000 - 120000 (30s–2m)
+  # Note: when logging is enabled the installer will write "Waiting for uninstaller..." and "Uninstaller finished." messages to the log.
 ```
 
 ### 文件 / Files

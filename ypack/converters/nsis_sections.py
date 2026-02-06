@@ -121,15 +121,26 @@ def generate_installer_section(ctx: BuildContext) -> List[str]:
 
     # --- Standard registry (Add/Remove Programs) ---
     lines.extend([
-        "  ; Add/Remove Programs registry entries",
+        "  ; Application registry entries",
         '  WriteRegStr HKLM "${REG_KEY}" "InstallPath" "$INSTDIR"',
         '  WriteRegStr HKLM "${REG_KEY}" "Version" "${APP_VERSION}"',
+        '',
+        '  ; Add/Remove Programs (ARP) registry entries',
         '  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "DisplayName" "${APP_NAME}"',
-        '  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "UninstallString" "$INSTDIR\\Uninstall.exe"',
         '  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "DisplayVersion" "${APP_VERSION}"',
         '  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "Publisher" "${APP_PUBLISHER}"',
-        "",
+        '  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "UninstallString" "$\\\"$INSTDIR\\Uninstall.exe$\\\""',
+        '  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "QuietUninstallString" "$\\\"$INSTDIR\\Uninstall.exe$\\\" /S"',
+        '  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "InstallLocation" "$INSTDIR"',
+        '  WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "NoModify" 1',
+        '  WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "NoRepair" 1',
     ])
+    # DisplayIcon — use install icon if available, else the main exe
+    if cfg.app.install_icon:
+        lines.append('  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "DisplayIcon" "$INSTDIR\\${MUI_ICON}"')
+    else:
+        lines.append('  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "DisplayIcon" "$INSTDIR\\Uninstall.exe,0"')
+    lines.append('')
 
     if has_logging:
         lines.append('  !insertmacro LogWrite "Registry entries written."')

@@ -56,6 +56,20 @@ install:
   launch_on_finish_label: "立即启动 MyApp"         # 复选框显示文字（可选）
   launch_in_background: false                      # 启动时是否在后台运行（false 可等待执行完成）
   installer_name: "${app.name}-${app.version}-Setup.exe"  # 可选：自定义安装包文件名。可被 CLI --installer-name 覆盖
+  # Behavior when an existing installation is detected at the target location.
+  # Supports two formats:
+  #
+  # Simple (string shorthand):
+  #   existing_install: "prompt_uninstall"
+  #
+  # Full (object — all fields optional, defaults shown):
+  existing_install:
+    mode: "prompt_uninstall"     # prompt_uninstall | auto_uninstall | overwrite | abort | none
+    version_check: false         # Skip detection if the installed version matches this version
+    allow_multiple: false        # Only detect conflict when installing to the same directory
+    uninstaller_args: "/S"       # CLI args passed to the old uninstaller
+    show_version_info: true      # Show installed version in prompt/abort dialogs
+    uninstall_wait_ms: 5000      # Max time (ms) to wait for the old uninstaller to finish; set to -1 to wait indefinitely (careful!)
 
 files:
   - "bin/MyApp.exe"                                # 简写：单个 source 字符串，默认 destination=$INSTDIR

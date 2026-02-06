@@ -7,6 +7,7 @@ import pytest
 from ypack.config import (
     AppInfo,
     EnvVarEntry,
+    ExistingInstallConfig,
     FileAssociation,
     FileEntry,
     InstallConfig,
@@ -316,6 +317,146 @@ class TestOnInit:
         script = YamlToNsisConverter(cfg).convert()
         assert "Signature verification failed" in script
 
+    # --- Installer Mutex ---
+    def test_installer_mutex(self):
+        """Every installer should have a mutex to prevent concurrent runs."""
+        script = YamlToNsisConverter(_simple_config()).convert()
+        assert "CreateMutex" in script
+        assert "${APP_NAME}_InstallerMutex" in script
+
+    # --- Existing-install detection (string shorthand compat) ---
+    def test_existing_install_prompt_uninstall(self):
+        cfg = _simple_config()
+        cfg.install.existing_install = ExistingInstallConfig(mode="prompt_uninstall")
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'ReadRegStr $R0 HKLM "${REG_KEY}" "InstallPath"' in script
+        assert 'IfFileExists "$R1\\Uninstall.exe" _ei_has_uninst _ei_overwrite_only' in script
+        assert 'IDYES _ei_do_uninstall IDNO _ei_cancel' in script
+
+    def test_existing_install_auto_uninstall(self):
+        cfg = _simple_config()
+        cfg.install.existing_install = ExistingInstallConfig(mode="auto_uninstall")
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'Goto _ei_do_uninstall' in script
+        assert 'ExecWait' in script
+
+    def test_existing_install_overwrite(self):
+        cfg = _simple_config()
+        cfg.install.existing_install = ExistingInstallConfig(mode="overwrite")
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'Overwrite mode: skip uninstall' in script
+
+    def test_existing_install_abort(self):
+        cfg = _simple_config()
+        cfg.install.existing_install = ExistingInstallConfig(mode="abort")
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'Installation aborted.' in script
+
+    def test_existing_install_none_skips_check(self):
+        cfg = _simple_config()
+        cfg.install.existing_install = ExistingInstallConfig(mode="none")
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'Existing-install detection' not in script
+
+    def test_existing_install_default_is_prompt(self):
+        cfg = _simple_config()
+        assert cfg.install.existing_install.mode == "prompt_uninstall"
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'IDYES _ei_do_uninstall IDNO _ei_cancel' in script
+
+    # --- String shorthand backward compat ---
+    def test_string_shorthand_backward_compat(self):
+        """existing_install: 'auto_uninstall' (plain string) should still work."""
+        cfg = PackageConfig.from_dict({
+            "app": {"name": "T", "version": "1.0.0"},
+            "install": {"existing_install": "auto_uninstall"},
+            "files": [{"source": "t.exe"}],
+        })
+        assert cfg.install.existing_install.mode == "auto_uninstall"
+
+    # --- Version check ---
+    def test_version_check_enabled(self):
+        cfg = _simple_config()
+        cfg.install.existing_install = ExistingInstallConfig(mode="prompt_uninstall", version_check=True)
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'ReadRegStr $R2 HKLM "${REG_KEY}" "Version"' in script
+        assert 'StrCmp $R2 "${APP_VERSION}" _ei_done' in script
+
+    def test_version_check_disabled_no_version_skip(self):
+        cfg = _simple_config()
+        cfg.install.existing_install = ExistingInstallConfig(mode="prompt_uninstall", version_check=False)
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'StrCmp $R2 "${APP_VERSION}" _ei_done' not in script
+
+    # --- allow_multiple ---
+    def test_allow_multiple_enabled(self):
+        cfg = _simple_config()
+        cfg.install.existing_install = ExistingInstallConfig(mode="prompt_uninstall", allow_multiple=True)
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'allow_multiple: only conflict when installing to the same directory' in script
+        assert 'StrCmp $R0 "$INSTDIR" 0 _ei_done' in script
+
+    def test_allow_multiple_legacy_field(self):
+        """Legacy allow_multiple_installations should set allow_multiple."""
+        cfg = PackageConfig.from_dict({
+            "app": {"name": "T", "version": "1.0.0"},
+            "install": {"allow_multiple_installations": True},
+            "files": [{"source": "t.exe"}],
+        })
+        assert cfg.install.existing_install.allow_multiple is True
+
+    # --- Show version info in prompt ---
+    def test_show_version_info(self):
+        cfg = _simple_config()
+        cfg.install.existing_install = ExistingInstallConfig(mode="prompt_uninstall", show_version_info=True)
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'version $R2' in script
+
+    def test_show_version_info_in_abort(self):
+        cfg = _simple_config()
+        cfg.install.existing_install = ExistingInstallConfig(mode="abort", show_version_info=True)
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'version $R2' in script
+
+    # --- Wait loop ---
+    def test_uninstall_wait_loop(self):
+        cfg = _simple_config()
+        cfg.install.existing_install = ExistingInstallConfig(mode="auto_uninstall", uninstall_wait_ms=3000)
+        cfg.logging = LoggingConfig(enabled=True, path="$INSTDIR\\install.log")
+        script = YamlToNsisConverter(cfg).convert()
+        assert '_ei_wait_loop:' in script
+        assert 'IntCmp $R3 3000' in script
+        assert 'Sleep 500' in script
+        # Should log actions
+        assert '!insertmacro LogWrite "Running existing uninstaller' in script
+        assert f'!insertmacro LogWrite "Waiting for uninstaller to finish (up to 3000ms)"' in script
+        # Retry dialog on failure
+        assert 'MB_RETRYCANCEL' in script
+
+    def test_uninstall_infinite_wait(self):
+        cfg = _simple_config()
+        cfg.install.existing_install = ExistingInstallConfig(mode="auto_uninstall", uninstall_wait_ms=-1)
+        script = YamlToNsisConverter(cfg).convert()
+        assert '_ei_wait_loop:' in script
+        # Infinite wait should not emit an IntCmp bound check
+        assert 'IntCmp $R3' not in script
+        assert 'no timeout' in script
+        assert 'Sleep 500' in script
+        # Should still include retry dialog if something goes wrong
+        assert 'MB_RETRYCANCEL' in script
+        # With logging enabled, we should log wait start and finish
+        cfg.logging = LoggingConfig(enabled=True, path="$INSTDIR\\install.log")
+        script = YamlToNsisConverter(cfg).convert()
+        assert '!insertmacro LogWrite "Waiting for uninstaller to finish (no timeout)"' in script
+        assert '!insertmacro LogWrite "Uninstaller finished."' in script
+
+    # --- Custom uninstaller args ---
+    def test_custom_uninstaller_args(self):
+        cfg = _simple_config()
+        cfg.install.existing_install = ExistingInstallConfig(mode="auto_uninstall", uninstaller_args='/S _?=$R1')
+        script = YamlToNsisConverter(cfg).convert()
+        assert '/S _?=$R1' in script
+
     def test_system_requirements(self):
         cfg = _simple_config()
         cfg.install.system_requirements = SystemRequirements(min_windows_version="10.0", min_free_space_mb=500, min_ram_mb=2048, require_admin=True)
@@ -324,6 +465,45 @@ class TestOnInit:
         assert "500 MB" in script
         assert "2048 MB" in script
         assert "UserInfo::GetAccountType" in script
+
+
+class TestUnOnInit:
+    """Tests for the un.onInit function."""
+    def test_uninstaller_mutex(self):
+        script = YamlToNsisConverter(_simple_config()).convert()
+        assert "Function un.onInit" in script
+        assert "${APP_NAME}_UninstallerMutex" in script
+
+    def test_uninstaller_logging(self):
+        cfg = _simple_config()
+        cfg.logging = LoggingConfig(enabled=True, path="$INSTDIR\\install.log")
+        script = YamlToNsisConverter(cfg).convert()
+        # un.onInit should contain LogSet
+        start = script.index("Function un.onInit")
+        end = script.index("FunctionEnd", start)
+        uninit_block = script[start:end]
+        assert "LogSet on" in uninit_block
+
+
+class TestARPRegistry:
+    """Tests for enhanced Add/Remove Programs registry entries."""
+    def test_quiet_uninstall_string(self):
+        script = YamlToNsisConverter(_simple_config()).convert()
+        assert 'QuietUninstallString' in script
+
+    def test_install_location(self):
+        script = YamlToNsisConverter(_simple_config()).convert()
+        assert '"InstallLocation" "$INSTDIR"' in script
+
+    def test_no_modify_no_repair(self):
+        script = YamlToNsisConverter(_simple_config()).convert()
+        assert '"NoModify" 1' in script
+        assert '"NoRepair" 1' in script
+
+    def test_display_icon_with_icon(self):
+        cfg = _simple_config(app={"name": "T", "version": "1", "install_icon": "logo.ico"})
+        script = YamlToNsisConverter(cfg).convert()
+        assert '"DisplayIcon"' in script
 
 
 class TestConverterRegistry:

@@ -113,7 +113,7 @@ def generate_update_section(ctx: BuildContext) -> List[str]:
 
 
 def generate_oninit(ctx: BuildContext) -> List[str]:
-    """Emit ``.onInit`` — signature verification, system-requirements checks, section flags."""
+    """Emit ``.onInit`` — mutex, signature, sysreq, existing-install, section flags."""
     cfg = ctx.config
     lines: List[str] = [
         "; ===========================================================================",
@@ -122,6 +122,19 @@ def generate_oninit(ctx: BuildContext) -> List[str]:
         "Function .onInit",
         "",
     ]
+
+    # ------------------------------------------------------------------
+    # Installer Mutex — prevent running two installers at the same time
+    # ------------------------------------------------------------------
+    lines.extend([
+        '  ; Prevent multiple installer instances',
+        '  System::Call \'kernel32::CreateMutex(p 0, i 0, t "${APP_NAME}_InstallerMutex") p .r1 ?e\'',
+        '  Pop $R0',
+        '  StrCmp $R0 "0" +3 0',
+        '  MessageBox MB_OK|MB_ICONEXCLAMATION "The installer is already running."',
+        '  Abort',
+        '',
+    ])
 
     # Signature verification
     if cfg.signing and cfg.signing.verify_signature:
@@ -184,15 +197,18 @@ def generate_oninit(ctx: BuildContext) -> List[str]:
             ])
 
     # Installer logging — LogSet is only available when NSIS was compiled
-    # with NSIS_CONFIG_LOG.  Our LogInit/LogWrite/LogClose macros provide
-    # a file-based fallback that always works, so LogSet is optional.
+    # with NSIS_CONFIG_LOG.
     if cfg.logging and cfg.logging.enabled:
         lines.extend([
             '!ifdef NSIS_CONFIG_LOG',
             '  LogSet on',
             '!endif',
-            "",
         ])
+
+    # ------------------------------------------------------------------
+    # Existing-install detection and behavior
+    # ------------------------------------------------------------------
+    lines.extend(_generate_existing_install_check(ctx))
 
     # Section flags for packages
     flat = _flatten_packages(cfg.packages)
@@ -202,6 +218,208 @@ def generate_oninit(ctx: BuildContext) -> List[str]:
             lines.append(f"  SectionSetFlags ${{{sec}}} 0")
         elif not pkg.optional:
             lines.append(f"  SectionSetFlags ${{{sec}}} ${{SF_SELECTED}}")
+
+    lines.extend([
+        "FunctionEnd",
+        "",
+    ])
+    return lines
+
+
+def _generate_existing_install_check(ctx: BuildContext) -> List[str]:
+    """Generate NSIS code for existing-install detection and handling.
+
+    Uses ``ExistingInstallConfig`` to drive the behavior.  Supports:
+    * version comparison (skip detection when same version is installed)
+    * allow_multiple (only detect if same $INSTDIR)
+    * configurable uninstaller args
+    * proper _wait_uninstall loop
+    * show_version_info in prompt
+    """
+    ei = ctx.config.install.existing_install
+    if not ei or ei.mode == "none":
+        return []
+
+    cfg = ctx.config
+    has_logging = bool(cfg.logging and cfg.logging.enabled)
+
+    lines: List[str] = [
+        "",
+        "  ; ------------------------------------------------------------------",
+        "  ; Existing-install detection",
+        "  ; ------------------------------------------------------------------",
+        '  ReadRegStr $R0 HKLM "${REG_KEY}" "InstallPath"',
+        '  StrCmp $R0 "" _ei_done  ; No previous install registered',
+    ]
+
+    # Version check: read installed version into $R2
+    if ei.version_check or ei.show_version_info:
+        lines.extend([
+            '  ReadRegStr $R2 HKLM "${REG_KEY}" "Version"',
+        ])
+
+    # Version check: skip detection when installed version matches
+    if ei.version_check:
+        lines.extend([
+            '  ; Skip if same version is already installed',
+            '  StrCmp $R2 "${APP_VERSION}" _ei_done',
+        ])
+
+    # allow_multiple: only treat as conflict if same directory
+    if ei.allow_multiple:
+        lines.extend([
+            '  ; allow_multiple: only conflict when installing to the same directory',
+            '  StrCmp $R0 "$INSTDIR" 0 _ei_done',
+        ])
+
+    # $R1 = install path for messages / uninstaller call
+    lines.extend([
+        '  StrCpy $R1 $R0',
+    ])
+
+    # Check for uninstaller
+    lines.extend([
+        '  IfFileExists "$R1\\Uninstall.exe" _ei_has_uninst _ei_overwrite_only',
+    ])
+
+    # --- _ei_has_uninst ---
+    lines.append('_ei_has_uninst:')
+
+    if ei.mode == "prompt_uninstall":
+        if ei.show_version_info:
+            lines.extend([
+                '  StrCmp $R2 "" _ei_prompt_no_ver 0',
+                '  MessageBox MB_YESNO|MB_ICONQUESTION "An existing installation (version $R2) was found at:$\\r$\\n$R1$\\r$\\n$\\r$\\nUninstall it first and continue?" IDYES _ei_do_uninstall IDNO _ei_cancel',
+                '  Goto _ei_prompt_done',
+                '_ei_prompt_no_ver:',
+                '  MessageBox MB_YESNO|MB_ICONQUESTION "An existing installation was found at:$\\r$\\n$R1$\\r$\\n$\\r$\\nUninstall it first and continue?" IDYES _ei_do_uninstall IDNO _ei_cancel',
+                '_ei_prompt_done:',
+            ])
+        else:
+            lines.extend([
+                '  MessageBox MB_YESNO|MB_ICONQUESTION "An existing installation was found at:$\\r$\\n$R1$\\r$\\n$\\r$\\nUninstall it first and continue?" IDYES _ei_do_uninstall IDNO _ei_cancel',
+            ])
+    elif ei.mode == "auto_uninstall":
+        lines.append('  Goto _ei_do_uninstall')
+    elif ei.mode == "abort":
+        if ei.show_version_info:
+            lines.extend([
+                '  StrCmp $R2 "" _ei_abort_no_ver 0',
+                '  MessageBox MB_OK|MB_ICONSTOP "An existing installation (version $R2) was found at $R1. Installation aborted."',
+                '  Goto _ei_cancel',
+                '_ei_abort_no_ver:',
+                '  MessageBox MB_OK|MB_ICONSTOP "An existing installation was found at $R1. Installation aborted."',
+                '  Goto _ei_cancel',
+            ])
+        else:
+            lines.extend([
+                '  MessageBox MB_OK|MB_ICONSTOP "An existing installation was found at $R1. Installation aborted."',
+                '  Goto _ei_cancel',
+            ])
+    elif ei.mode == "overwrite":
+        lines.append('  Goto _ei_done  ; Overwrite mode: skip uninstall')
+
+    # --- _ei_do_uninstall ---
+    uninst_args = ei.uninstaller_args or "/S"
+    wait_ms = ei.uninstall_wait_ms
+
+    # If wait_ms < 0, perform an infinite wait (no timeout). Otherwise use a timed loop.
+    if wait_ms is not None and int(wait_ms) < 0:
+        lines.extend([
+            '_ei_do_uninstall:',
+        ])
+        if has_logging:
+            lines.append(f'  !insertmacro LogWrite "Running existing uninstaller: $R1\\Uninstall.exe {uninst_args}"')
+            lines.append('  !insertmacro LogWrite "Waiting for uninstaller to finish (no timeout)"')
+        lines.extend([
+            f'  ExecWait \'$R1\\Uninstall.exe {uninst_args}\'',
+            "  ; Wait for uninstaller to finish (no timeout)",
+            "_ei_wait_loop:",
+            "  Sleep 500",
+            '  IfFileExists "$R1\\Uninstall.exe" _ei_wait_loop _ei_wait_done',
+            "_ei_wait_done:",
+        ])
+        if has_logging:
+            lines.append('  !insertmacro LogWrite "Uninstaller finished."')
+        lines.extend([
+            "  ; Verify uninstaller is gone",
+            '  IfFileExists "$R1\\Uninstall.exe" 0 _ei_done',
+            '  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "The previous uninstaller did not finish.  Retry or cancel installation?" IDRETRY _ei_do_uninstall',
+            '  ; Fall through to cancel',
+        ])
+    else:
+        # Timed wait loop (default behaviour)
+        lines.extend([
+            '_ei_do_uninstall:',
+        ])
+        if has_logging:
+            lines.append(f'  !insertmacro LogWrite "Running existing uninstaller: $R1\\Uninstall.exe {uninst_args}"')
+            lines.append(f'  !insertmacro LogWrite "Waiting for uninstaller to finish (up to {wait_ms}ms)"')
+        lines.extend([
+            f'  ExecWait \'$R1\\Uninstall.exe {uninst_args}\'',
+            f'  ; Wait for uninstaller to finish (up to {wait_ms}ms)',
+            '  StrCpy $R3 0',
+            "_ei_wait_loop:",
+            f'  ; Loop: if $R3 >= {wait_ms} goto _ei_wait_done, else continue waiting',
+            f'  IntCmp $R3 {wait_ms} _ei_wait_done _ei_wait_done _ei_wait_continue',
+            '_ei_wait_continue:',
+            '  Sleep 500',
+            '  IntOp $R3 $R3 + 500',
+            '  IfFileExists "$R1\\Uninstall.exe" _ei_wait_loop _ei_wait_done',
+            '_ei_wait_done:',
+        ])
+        if has_logging:
+            lines.append('  !insertmacro LogWrite "Uninstaller finished."')
+        lines.extend([
+            '  ; Verify uninstaller is gone',
+            '  IfFileExists "$R1\\Uninstall.exe" 0 _ei_done',
+            '  !insertmacro LogWrite "Uninstaller did not finish within timeout."',
+            '  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "The previous uninstaller did not finish.  Retry or cancel installation?" IDRETRY _ei_do_uninstall',
+            '  ; Fall through to cancel',
+        ])
+
+    # --- _ei_cancel ---
+    lines.extend([
+        '_ei_cancel:',
+        '  Abort',
+    ])
+
+    # --- _ei_overwrite_only ---
+    lines.extend([
+        '_ei_overwrite_only:',
+        '  ; No uninstaller found \u2014 files will be overwritten',
+    ])
+
+    lines.append('_ei_done:')
+    lines.append('')
+    return lines
+
+
+def generate_uninit(ctx: BuildContext) -> List[str]:
+    """Emit ``un.onInit`` \u2014 uninstaller mutex and confirmation."""
+    cfg = ctx.config
+    lines: List[str] = [
+        "; ===========================================================================",
+        "; Uninstaller Initialization",
+        "; ===========================================================================",
+        "Function un.onInit",
+        "",
+        '  ; Prevent multiple uninstaller instances',
+        '  System::Call \'kernel32::CreateMutex(p 0, i 0, t "${APP_NAME}_UninstallerMutex") p .r1 ?e\'',
+        '  Pop $R0',
+        '  StrCmp $R0 "0" +3 0',
+        '  MessageBox MB_OK|MB_ICONEXCLAMATION "The uninstaller is already running."',
+        '  Abort',
+        '',
+    ]
+
+    # Logging
+    if cfg.logging and cfg.logging.enabled:
+        lines.extend([
+            '!ifdef NSIS_CONFIG_LOG',
+            '  LogSet on',
+            '!endif',
+        ])
 
     lines.extend([
         "FunctionEnd",
