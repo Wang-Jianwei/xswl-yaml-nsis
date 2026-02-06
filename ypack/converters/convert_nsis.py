@@ -18,7 +18,7 @@ from .nsis_header import (
     generate_header,
     generate_modern_ui,
 )
-from .nsis_helpers import generate_checksum_helper, generate_path_helpers
+from .nsis_helpers import generate_checksum_helper, generate_log_macros, generate_path_helpers
 from .nsis_packages import (
     generate_oninit,
     generate_package_sections,
@@ -54,6 +54,10 @@ class YamlToNsisConverter(BaseConverter):
         parts.extend(generate_signing_section(self.ctx))
         parts.extend(generate_update_section(self.ctx))
 
+        # Logging macros (must come before sections that use them)
+        if self.config.logging and self.config.logging.enabled:
+            parts.extend(generate_log_macros())
+
         # PATH helpers (only when needed)
         needs_path_helpers = any(
             e.append for e in self.config.install.env_vars
@@ -81,6 +85,17 @@ class YamlToNsisConverter(BaseConverter):
         import os
         self.ctx.output_dir = os.path.dirname(os.path.abspath(output_path))
         script = self.convert()
+
+        # Post-process: resolve any remaining configuration-style variables
+        # (e.g. ${app.name}) that may appear in the final text. We only
+        # resolve lowercase/dotted references to avoid touching NSIS defines
+        # such as ${APP_NAME}.
+        import re
+        pattern = re.compile(r"\$\{([a-z][a-z0-9_.]*)\}")
+        def _repl(m: re.Match) -> str:
+            return self.ctx.resolve(m.group(0))
+        script = pattern.sub(_repl, script)
+
         # NSIS requires the script file to be encoded as UTF-8 with BOM
         # when it contains Unicode characters. Use 'utf-8-sig' so Python
         # writes the BOM automatically at the start of the file.

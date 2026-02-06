@@ -96,14 +96,12 @@ def generate_general_settings(ctx: BuildContext) -> List[str]:
     if cfg.install.silent_install:
         lines.append("SilentInstall silent")
 
-
     # Logging
     if cfg.logging and cfg.logging.enabled:
         log_path = cfg.logging.path or "$APPDATA\\${APP_NAME}\\install.log"
-        lines.append(f"; Logging enabled: path={log_path} level={cfg.logging.level}")
-        # Note: LogSet must be placed inside a Section or Function (we enable it in .onInit)
-        if cfg.logging.path:
-            lines.append(f'!define LOG_FILE "{ctx.resolve(cfg.logging.path)}"')
+        resolved_path = ctx.resolve(cfg.logging.path) if cfg.logging.path else log_path
+        lines.append(f'; Logging: {resolved_path} (level={cfg.logging.level})')
+        lines.append(f'!define LOG_FILE "{resolved_path}"')
 
     # Utility includes (provide helper macros used elsewhere, e.g. ${GetSize})
     lines.append('!include "FileFunc.nsh"')
@@ -153,7 +151,8 @@ def generate_modern_ui(ctx: BuildContext) -> List[str]:
         lines.append(f'!define MUI_FINISHPAGE_RUN "{path}"')
         label = cfg.install.launch_on_finish_label
         if label:
-            lines.append(f'!define MUI_FINISHPAGE_RUN_TEXT "{label}"')
+            label_resolved = ctx.resolve(label)
+            lines.append(f'!define MUI_FINISHPAGE_RUN_TEXT "{label_resolved}"')
         lines.append("")
 
     return lines

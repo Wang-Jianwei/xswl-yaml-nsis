@@ -1,9 +1,13 @@
 """
 NSIS helper functions emitted into the generated script.
 
-Contains PATH manipulation helpers (_Contains, _NormalizePathEntry,
-_RemovePathEntry) that are only included when ``append=True`` env vars
-are present, as well as VerifyChecksum / ExtractArchive stubs.
+Contains:
+- Logging macros (LogInit / LogWrite / LogClose) — fallback file-based
+  logging when the NSIS build does not support ``LogSet``.
+- PATH manipulation helpers (_Contains, _NormalizePathEntry,
+  _RemovePathEntry) that are only included when ``append=True`` env vars
+  are present.
+- VerifyChecksum / ExtractArchive stubs.
 """
 
 from __future__ import annotations
@@ -11,6 +15,84 @@ from __future__ import annotations
 from typing import List
 
 from .context import BuildContext
+
+
+# -----------------------------------------------------------------------
+# Logging macros
+# -----------------------------------------------------------------------
+
+def generate_log_macros() -> List[str]:
+    r"""Emit reusable ``!macro`` blocks for structured install/uninstall logging.
+
+    Three macros are generated:
+
+    * **LogInit** – opens (or creates) the log file and writes a header.
+    * **LogWrite** ``<message>`` – appends one timestamped line.
+    * **LogClose** – writes a footer and closes the file handle.
+
+    The macros use compile-time ``!ifdef LOG_FILE`` guards so they
+    silently become no-ops when logging is not configured.  They are
+    safe to call from *any* Section or Function (installer **and**
+    uninstaller) because ``!macro`` expansion is context-free.
+
+    The file handle ``$_LOG_HANDLE`` is stored in ``$R9`` (callers
+    should not clobber it between LogInit and LogClose).
+    """
+    return [
+        "; ===========================================================================",
+        "; Logging Macros",
+        "; ===========================================================================",
+        "",
+        "; --- Var for log file handle ---",
+        "Var _LOG_HANDLE",
+        "",
+        "; ---------------------------------------------------------------------------",
+        "; LogInit – open log file and write header",
+        ";   Usage: !insertmacro LogInit <title>",
+        ";          e.g.  !insertmacro LogInit \"Install\"",
+        ";   Note: Installer uses 'w' (write/truncate) to start fresh; Uninstaller",
+        ";         uses 'a' (append) so both install and uninstall logs are kept.",
+        "; ---------------------------------------------------------------------------",
+        "!macro LogInit _title",
+        "!ifdef LOG_FILE",
+        '  CreateDirectory "$INSTDIR"',
+        '  !ifdef __UNINSTALL__',
+        '    ; Uninstaller: append to existing log',
+        '    FileOpen $_LOG_HANDLE "${LOG_FILE}" a',
+        '  !else',
+        '    ; Installer: start fresh (truncate old log)',
+        '    FileOpen $_LOG_HANDLE "${LOG_FILE}" w',
+        '  !endif',
+        '  FileSeek $_LOG_HANDLE 0 END',
+        '  FileWrite $_LOG_HANDLE "=======================================================$\\r$\\n"',
+        '  FileWrite $_LOG_HANDLE "${APP_NAME} ${APP_VERSION} - ${_title}$\\r$\\n"',
+        '  FileWrite $_LOG_HANDLE "Date: ${__DATE__} ${__TIME__}$\\r$\\n"',
+        '  FileWrite $_LOG_HANDLE "=======================================================$\\r$\\n"',
+        "!endif",
+        "!macroend",
+        "",
+        "; ---------------------------------------------------------------------------",
+        "; LogWrite – append a single message line",
+        ";   Usage: !insertmacro LogWrite <message>",
+        "; ---------------------------------------------------------------------------",
+        "!macro LogWrite _msg",
+        "!ifdef LOG_FILE",
+        '  FileWrite $_LOG_HANDLE "[${__DATE__} ${__TIME__}] ${_msg}$\\r$\\n"',
+        "!endif",
+        "!macroend",
+        "",
+        "; ---------------------------------------------------------------------------",
+        "; LogClose – write footer and close the file",
+        "; ---------------------------------------------------------------------------",
+        "!macro LogClose",
+        "!ifdef LOG_FILE",
+        '  FileWrite $_LOG_HANDLE "-------------------------------------------------------$\\r$\\n"',
+        '  FileWrite $_LOG_HANDLE "Completed.$\\r$\\n$\\r$\\n"',
+        '  FileClose $_LOG_HANDLE',
+        "!endif",
+        "!macroend",
+        "",
+    ]
 
 
 def generate_path_helpers(ctx: BuildContext) -> List[str]:

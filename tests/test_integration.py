@@ -218,6 +218,8 @@ class TestFullIntegration:
         start = nsi.index('Function .onInit')
         end = nsi.index('FunctionEnd', start)
         assert 'LogSet on' in nsi[start:end]
+        # Ensure we include compile-time guard for LogSet
+        assert '!ifdef NSIS_CONFIG_LOG' in nsi
 
         # Uninstall
         assert 'Section "Uninstall"' in nsi

@@ -139,14 +139,14 @@ app:
 
 ```yaml
 install:
-  install_dir: "$PROGRAMFILES64\\${APP_NAME}"
+  install_dir: "$PROGRAMFILES64\\${app.name}"
   desktop_shortcut_target: "$INSTDIR\\MyApp.exe"
   start_menu_shortcut_target: "$INSTDIR\\MyApp.exe"
   launch_on_finish: "$INSTDIR\\MyApp.exe"
   launch_on_finish_label: "Launch MyApp"
   launch_in_background: true
   silent_install: false
-  installer_name: "${APP_NAME}-${APP_VERSION}-Setup.exe"  # 可选：自定义安装包文件名（支持 ${APP_NAME} / ${APP_VERSION} 等工具宏；可被 CLI 的 --installer-name 覆盖）
+  installer_name: "${app.name}-${app.version}-Setup.exe"  # 可选：自定义安装包文件名（可被 CLI 的 --installer-name 覆盖）
 ```
 
 ### 文件 / Files
@@ -359,7 +359,7 @@ ypack/
 
 ## 系统要求 / Requirements
 
-- Python ≥ 3.10
+- Python ≥ 3.8
 - PyYAML ≥ 6.0
 - NSIS / WIX / Inno Setup（对应后端的编译器）
 

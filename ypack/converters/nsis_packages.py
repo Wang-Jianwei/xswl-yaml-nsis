@@ -19,6 +19,7 @@ def generate_package_sections(ctx: BuildContext) -> List[str]:
     if not ctx.config.packages:
         return []
 
+    has_logging = ctx.config.logging and ctx.config.logging.enabled
     lines: List[str] = [
         "; ===========================================================================",
         "; Package / Component Sections",
@@ -40,6 +41,9 @@ def generate_package_sections(ctx: BuildContext) -> List[str]:
                 idx_ref[0] += 1
                 lines.append(f'Section "{pkg.name}" {sec_name}')
 
+                if has_logging:
+                    lines.append(f'  !insertmacro LogWrite "Installing component: {pkg.name}"')
+
                 for src_entry in pkg.sources:
                     src_val = src_entry.get("source", "")
                     dest = src_entry.get("destination", "$INSTDIR")
@@ -55,8 +59,12 @@ def generate_package_sections(ctx: BuildContext) -> List[str]:
                     lines.append("")
                     lines.append("  ; Post-install commands")
                     for cmd in pkg.post_install:
+                        if has_logging:
+                            lines.append(f'  !insertmacro LogWrite "Running: {cmd}"')
                         lines.append(f'  ExecWait "{cmd}"')
 
+                if has_logging:
+                    lines.append(f'  !insertmacro LogWrite "Component {pkg.name} done."')
                 lines.append("SectionEnd")
                 lines.append("")
 
@@ -175,12 +183,14 @@ def generate_oninit(ctx: BuildContext) -> List[str]:
                 "",
             ])
 
-    # Installer logging (must be inside a Function)
+    # Installer logging — LogSet is only available when NSIS was compiled
+    # with NSIS_CONFIG_LOG.  Our LogInit/LogWrite/LogClose macros provide
+    # a file-based fallback that always works, so LogSet is optional.
     if cfg.logging and cfg.logging.enabled:
-        log_path = cfg.logging.path or "$APPDATA\\${APP_NAME}\\install.log"
         lines.extend([
-            f'  ; Installer logging: {log_path}',
+            '!ifdef NSIS_CONFIG_LOG',
             '  LogSet on',
+            '!endif',
             "",
         ])
 

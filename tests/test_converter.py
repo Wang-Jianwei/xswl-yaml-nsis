@@ -265,10 +265,31 @@ class TestLogging:
         cfg.logging = LoggingConfig(enabled=True, path="$APPDATA\\${APP_NAME}\\install.log", level="DEBUG")
         script = YamlToNsisConverter(cfg).convert()
         assert "LogSet on" in script
-        # Ensure the LogSet is enabled inside .onInit (not just in uninstaller section)
+        # Ensure the LogSet is enabled inside .onInit
         start = script.index('Function .onInit')
         end = script.index('FunctionEnd', start)
         assert 'LogSet on' in script[start:end]
+        # Guard with compile-time check so builds without NSIS logging don't fail
+        assert '!ifdef NSIS_CONFIG_LOG' in script
+        # LOG_FILE define should be set
+        assert '!define LOG_FILE' in script
+        # Logging macros should be present
+        assert '!macro LogInit' in script
+        assert '!macro LogWrite' in script
+        assert '!macro LogClose' in script
+        # Install section should use the logging macros
+        assert '!insertmacro LogInit "Install"' in script
+        assert '!insertmacro LogWrite' in script
+        assert '!insertmacro LogClose' in script
+        # Uninstall section should also use logging macros
+        assert '!insertmacro LogInit "Uninstall"' in script
+
+    def test_log_macros_not_emitted_when_disabled(self):
+        cfg = _simple_config()
+        cfg.logging = LoggingConfig(enabled=False)
+        script = YamlToNsisConverter(cfg).convert()
+        assert '!macro LogInit' not in script
+        assert '!insertmacro LogInit' not in script
 
 
 class TestFinishRun:
@@ -279,6 +300,13 @@ class TestFinishRun:
         script = YamlToNsisConverter(cfg).convert()
         assert 'MUI_FINISHPAGE_RUN "$INSTDIR\\MyApp.exe"' in script
         assert 'MUI_FINISHPAGE_RUN_TEXT "Run MyApp"' in script
+
+    def test_finish_run_label_resolution(self):
+        cfg = _simple_config()
+        cfg.install.launch_on_finish = "$INSTDIR\\MyApp.exe"
+        cfg.install.launch_on_finish_label = "Run ${app.name}"
+        script = YamlToNsisConverter(cfg).convert()
+        assert 'MUI_FINISHPAGE_RUN_TEXT "Run TestApp"' in script
 
 
 class TestOnInit:

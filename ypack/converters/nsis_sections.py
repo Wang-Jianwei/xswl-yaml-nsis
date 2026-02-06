@@ -40,6 +40,7 @@ def _should_use_recursive(source: str) -> bool:
 def generate_installer_section(ctx: BuildContext) -> List[str]:
     """Emit the main ``Section "Install"``."""
     cfg = ctx.config
+    has_logging = cfg.logging and cfg.logging.enabled
     lines: List[str] = [
         "; ===========================================================================",
         '; Installer Section',
@@ -48,6 +49,12 @@ def generate_installer_section(ctx: BuildContext) -> List[str]:
         "",
     ]
 
+    # --- Logging: begin ---
+    if has_logging:
+        lines.append('  !insertmacro LogInit "Install"')
+        lines.append('  !insertmacro LogWrite "Install directory: $INSTDIR"')
+        lines.append("")
+
     # Track whether we need the inetc plugin
     has_remote = any(fe.is_remote for fe in cfg.files)
     if has_remote:
@@ -55,6 +62,8 @@ def generate_installer_section(ctx: BuildContext) -> List[str]:
         lines.insert(0, "; Plugin: inetc for HTTP downloads")
 
     # --- Files ---
+    if has_logging:
+        lines.append('  !insertmacro LogWrite "Copying files ..."')
     current_outpath: Optional[str] = None
     for fe in cfg.files:
         dest = fe.destination or "$INSTDIR"
@@ -106,6 +115,9 @@ def generate_installer_section(ctx: BuildContext) -> List[str]:
         '  WriteUninstaller "$INSTDIR\\Uninstall.exe"',
         "",
     ])
+    if has_logging:
+        lines.append('  !insertmacro LogWrite "Uninstaller created."')
+        lines.append("")
 
     # --- Standard registry (Add/Remove Programs) ---
     lines.extend([
@@ -119,6 +131,10 @@ def generate_installer_section(ctx: BuildContext) -> List[str]:
         "",
     ])
 
+    if has_logging:
+        lines.append('  !insertmacro LogWrite "Registry entries written."')
+        lines.append("")
+
     # --- Custom registry entries ---
     _emit_registry_writes(ctx, lines)
 
@@ -127,6 +143,9 @@ def generate_installer_section(ctx: BuildContext) -> List[str]:
 
     # --- Shortcuts ---
     _emit_shortcuts(ctx, lines)
+    if has_logging and (cfg.install.desktop_shortcut_target or cfg.install.start_menu_shortcut_target):
+        lines.append('  !insertmacro LogWrite "Shortcuts created."')
+        lines.append("")
 
     # --- File associations ---
     _emit_file_associations(ctx, lines)
@@ -137,6 +156,12 @@ def generate_installer_section(ctx: BuildContext) -> List[str]:
     lines.append('  IntFmt $0 "0x%08X" $0')
     lines.append('  WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}" "EstimatedSize" $0')
     lines.append("")
+
+    # --- Logging: end ---
+    if has_logging:
+        lines.append('  !insertmacro LogWrite "Installation completed successfully."')
+        lines.append('  !insertmacro LogClose')
+        lines.append("")
 
     lines.append("SectionEnd")
     lines.append("")
@@ -150,6 +175,7 @@ def generate_installer_section(ctx: BuildContext) -> List[str]:
 def generate_uninstaller_section(ctx: BuildContext) -> List[str]:
     """Emit ``Section "Uninstall"``."""
     cfg = ctx.config
+    has_logging = cfg.logging and cfg.logging.enabled
     lines: List[str] = [
         "; ===========================================================================",
         "; Uninstaller Section",
@@ -158,14 +184,14 @@ def generate_uninstaller_section(ctx: BuildContext) -> List[str]:
         "",
     ]
 
-    # Logging
-    if cfg.logging and cfg.logging.enabled:
-        log_path = cfg.logging.path or "$APPDATA\\${APP_NAME}\\uninstall.log"
-        lines.append(f"  ; Uninstaller logging: {log_path}")
-        lines.append("  LogSet on")
+    # --- Logging: begin ---
+    if has_logging:
+        lines.append('  !insertmacro LogInit "Uninstall"')
         lines.append("")
 
     # Remove files (reverse order)
+    if has_logging:
+        lines.append('  !insertmacro LogWrite "Removing installed files ..."')
     lines.append("  ; Remove installed files")
     for fe in reversed(cfg.files):
         dest = fe.destination or "$INSTDIR"
@@ -214,7 +240,13 @@ def generate_uninstaller_section(ctx: BuildContext) -> List[str]:
         lines.append('  RMDir "$SMPROGRAMS\\${APP_NAME}"')
         lines.append("")
 
+    if has_logging and (cfg.install.desktop_shortcut_target or cfg.install.start_menu_shortcut_target):
+        lines.append('  !insertmacro LogWrite "Shortcuts removed."')
+        lines.append("")
+
     # Remove standard registry keys
+    if has_logging:
+        lines.append('  !insertmacro LogWrite "Removing registry entries ..."')
     lines.extend([
         "  ; Remove registry entries",
         '  DeleteRegKey HKLM "${REG_KEY}"',
@@ -242,6 +274,12 @@ def generate_uninstaller_section(ctx: BuildContext) -> List[str]:
 
     # Remove environment variables
     _emit_env_var_removes(ctx, lines)
+
+    # --- Logging: end ---
+    if has_logging:
+        lines.append('  !insertmacro LogWrite "Uninstallation completed."')
+        lines.append('  !insertmacro LogClose')
+        lines.append("")
 
     lines.extend([
         "SectionEnd",
