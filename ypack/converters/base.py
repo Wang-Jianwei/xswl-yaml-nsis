@@ -5,7 +5,7 @@ Base converter interface for packaging tools.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ..config import PackageConfig
 from .context import BuildContext
@@ -19,7 +19,7 @@ class BaseConverter(ABC):
     # Default output file extension per tool (subclasses may override).
     output_extension: str = ".txt"
 
-    def __init__(self, config: PackageConfig, raw_config: Dict[str, Any] | None = None) -> None:
+    def __init__(self, config: PackageConfig, raw_config: Optional[Dict[str, Any]] = None) -> None:
         self.config = config
         self.raw_config = raw_config or getattr(config, "_raw_dict", {})
         self.ctx = BuildContext(

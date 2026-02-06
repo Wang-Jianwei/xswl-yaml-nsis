@@ -7,7 +7,7 @@ the various sub-modules (header, sections, packages, helpers).
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ..config import PackageConfig
 from .base import BaseConverter
@@ -34,7 +34,7 @@ class YamlToNsisConverter(BaseConverter):
     tool_name = "nsis"
     output_extension = ".nsi"
 
-    def __init__(self, config: PackageConfig, raw_config: dict | None = None) -> None:
+    def __init__(self, config: PackageConfig, raw_config: Optional[Dict[str, Any]] = None) -> None:
         super().__init__(config, raw_config)
 
     # ------------------------------------------------------------------

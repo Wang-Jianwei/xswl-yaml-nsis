@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import textwrap
+from typing import List, Optional
 
 from . import __version__
 from .converters import BUILD_COMMANDS, OUTPUT_EXTENSIONS, SUPPORTED_FORMATS, get_converter_class
@@ -65,7 +66,7 @@ _FORMAT_CHOICES = SUPPORTED_FORMATS
 # CLI entry point
 # -----------------------------------------------------------------------
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: Optional[List[str]] = None) -> None:
     """CLI entry point — called by the ``xswl-ypack`` console script."""
     parser = argparse.ArgumentParser(
         prog="xswl-ypack",

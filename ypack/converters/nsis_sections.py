@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import List, Set
+from typing import List, Set, Optional
 
 from .context import BuildContext
 
@@ -55,7 +55,7 @@ def generate_installer_section(ctx: BuildContext) -> List[str]:
         lines.insert(0, "; Plugin: inetc for HTTP downloads")
 
     # --- Files ---
-    current_outpath: str | None = None
+    current_outpath: Optional[str] = None
     for fe in cfg.files:
         dest = fe.destination or "$INSTDIR"
 
