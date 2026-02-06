@@ -10,9 +10,8 @@ app:
 
 install:
   install_dir: $PROGRAMFILES64\\{app.publisher}\\{app.name}
-  create_desktop_shortcut: true
-  create_start_menu_shortcut: true
-  registry_key: Software\\{app.name}
+  desktop_shortcut_target: "$INSTDIR\\${app.name}.exe"
+  start_menu_shortcut_target: "$INSTDIR\\${app.name}.exe"
 
 files:
   # Main executable

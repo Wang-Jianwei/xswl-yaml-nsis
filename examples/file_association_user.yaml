@@ -4,7 +4,7 @@ app:
 
 install:
   install_dir: "$PROGRAMFILES64\\ExampleApp"
-  create_desktop_shortcut: true
+  desktop_shortcut_target: "$INSTDIR\\${app.name}.exe"
   file_associations:
     - extension: ".foo"
       prog_id: "ExampleApp.File"

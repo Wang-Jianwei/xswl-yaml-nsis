@@ -124,7 +124,7 @@ packages:
 
 ### 3. ✅ 创建快捷方式（桌面 / 开始菜单）
 
-**实现方式**: `install.create_desktop_shortcut` 和 `install.create_start_menu_shortcut`  
+**实现方式**: presence of `install.desktop_shortcut_target` and `install.start_menu_shortcut_target` will indicate creation of shortcuts (no boolean flags)  
 **相关代码**:
 
 - [ypack/config.py](../ypack/config.py#L54-L74) - `InstallConfig` 数据类

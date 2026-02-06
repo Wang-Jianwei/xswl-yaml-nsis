@@ -436,20 +436,29 @@ class YamlToNsisConverter(BaseConverter):
                     lines.append(f'  ; append=True specified for {env.name} but only PATH append is implemented; setting value directly')
                 lines.append(f'  WriteRegStr {hive} "{key}" "{env.name}" "{env_value}"')
 
-        # Desktop shortcut
-        if self.config.install.create_desktop_shortcut:
+        # Desktop shortcut (enabled when desktop_shortcut_target is provided)
+        desktop_target = getattr(self.config.install, 'desktop_shortcut_target', '')
+        if desktop_target:
+            target = self.resolve_variables(desktop_target)
+            # If target is a relative path (not starting with $ or drive letter), prefix with $INSTDIR
+            if not (target.startswith('$') or re.match(r'^[A-Za-z]:\\\\', target)):
+                target = f'$INSTDIR\\{target}'
             lines.extend([
                 "  ; Create desktop shortcut",
-                '  CreateShortCut "$DESKTOP\\${APP_NAME}.lnk" "$INSTDIR\\${APP_NAME}.exe"',
+                f'  CreateShortCut "$DESKTOP\\${{APP_NAME}}.lnk" "{target}"',
                 "",
             ])
 
         # Start menu shortcut
-        if self.config.install.create_start_menu_shortcut:
+        start_target = getattr(self.config.install, 'start_menu_shortcut_target', '')
+        if start_target:
+            target = self.resolve_variables(start_target)
+            if not (target.startswith('$') or re.match(r'^[A-Za-z]:\\\\', target)):
+                target = f'$INSTDIR\\{target}'
             lines.extend([
                 "  ; Create start menu shortcuts",
                 '  CreateDirectory "$SMPROGRAMS\\${APP_NAME}"',
-                '  CreateShortCut "$SMPROGRAMS\\${APP_NAME}\\${APP_NAME}.lnk" "$INSTDIR\\${APP_NAME}.exe"',
+                f'  CreateShortCut "$SMPROGRAMS\\${{APP_NAME}}\\${{APP_NAME}}.lnk" "{target}"',
                 '  CreateShortCut "$SMPROGRAMS\\${APP_NAME}\\Uninstall.lnk" "$INSTDIR\\Uninstall.exe"',
                 "",
             ])
@@ -530,14 +539,14 @@ class YamlToNsisConverter(BaseConverter):
         ])
 
         # Remove shortcuts
-        if self.config.install.create_desktop_shortcut:
+        if getattr(self.config.install, 'desktop_shortcut_target', ''):
             lines.extend([
                 "  ; Remove desktop shortcut",
                 '  Delete "$DESKTOP\\${APP_NAME}.lnk"',
                 "",
             ])
 
-        if self.config.install.create_start_menu_shortcut:
+        if getattr(self.config.install, 'start_menu_shortcut_target', ''):
             lines.extend([
                 "  ; Remove start menu shortcuts",
                 '  Delete "$SMPROGRAMS\\${APP_NAME}\\${APP_NAME}.lnk"',

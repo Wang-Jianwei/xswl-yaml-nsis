@@ -24,8 +24,8 @@ app:
 
 install:
   install_dir: $PROGRAMFILES64\\IntegrationTest
-  create_desktop_shortcut: true
-  create_start_menu_shortcut: true
+  desktop_shortcut_target: $INSTDIR\\IntegrationTest.exe
+  start_menu_shortcut_target: $INSTDIR\\IntegrationTest.exe
 
 files:
   - test.exe
@@ -81,8 +81,8 @@ app:
 
 install:
   install_dir: $PROGRAMFILES64\\CompleteTest
-  create_desktop_shortcut: true
-  create_start_menu_shortcut: true
+  desktop_shortcut_target: $INSTDIR\\CompleteTest.exe
+  start_menu_shortcut_target: $INSTDIR\\CompleteTest.exe
 
 files:
   - app.exe

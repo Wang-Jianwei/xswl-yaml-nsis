@@ -87,7 +87,7 @@ class TestPackageConfig(unittest.TestCase):
             },
             "install": {
                 "install_dir": "$PROGRAMFILES64\\TestApp",
-                "create_desktop_shortcut": True
+                "desktop_shortcut_target": "$INSTDIR\\TestApp.exe"
             },
             "files": [
                 "test.exe",
@@ -101,7 +101,7 @@ class TestPackageConfig(unittest.TestCase):
         self.assertEqual(config.app.name, "TestApp")
         self.assertEqual(config.app.version, "1.0.0")
         self.assertEqual(len(config.files), 2)
-        self.assertTrue(config.install.create_desktop_shortcut)
+        self.assertEqual(config.install.desktop_shortcut_target, "$INSTDIR\\TestApp.exe")
     
     def test_from_yaml(self):
         """Test PackageConfig creation from YAML file"""

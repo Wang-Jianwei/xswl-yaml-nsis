@@ -119,9 +119,8 @@ install:
 ```yaml
 install:
   install_dir: "$PROGRAMFILES64\\${APP_NAME}"  # 安装目录 / Install directory
-  create_desktop_shortcut: true                # 桌面快捷方式 / Desktop shortcut
-  create_start_menu_shortcut: true             # 开始菜单快捷方式 / Start menu shortcut
-  registry_key: "Software\\${APP_NAME}"        # 注册表键 / Registry key
+  desktop_shortcut_target: "$INSTDIR\\${APP_NAME}.exe"  # 桌面快捷方式目标（存在则创建）
+  start_menu_shortcut_target: "$INSTDIR\\${APP_NAME}.exe"  # 开始菜单快捷方式目标（存在则创建）
 ```
 
 #### 注册表项 / Registry entries

@@ -12,8 +12,8 @@ app:
 
 install:
   install_dir: "$PROGRAMFILES64\\DemoCorp\\IconDemoApp"
-  create_desktop_shortcut: true
-  create_start_menu_shortcut: true
+  desktop_shortcut_target: "$INSTDIR\\${app.name}.exe"
+  start_menu_shortcut_target: "$INSTDIR\\${app.name}.exe"
   launch_on_finish: "$INSTDIR\\IconDemo.exe"
 
 files:

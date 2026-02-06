@@ -77,8 +77,8 @@ class TestYamlToNsisConverter(unittest.TestCase):
     def test_shortcuts_generation(self):
         """Test shortcut generation"""
         config = self.simple_config
-        config.install.create_desktop_shortcut = True
-        config.install.create_start_menu_shortcut = True
+        config.install.desktop_shortcut_target = "$INSTDIR\\TestApp.exe"
+        config.install.start_menu_shortcut_target = "$INSTDIR\\TestApp.exe"
         
         converter = YamlToNsisConverter(config)
         section = converter._generate_installer_section()
@@ -87,6 +87,7 @@ class TestYamlToNsisConverter(unittest.TestCase):
         self.assertIn("CreateShortCut", script)
         self.assertIn("$DESKTOP", script)
         self.assertIn("$SMPROGRAMS", script)
+        self.assertIn("$INSTDIR\\TestApp.exe", script)
     
     def test_uninstaller_section(self):
         """Test uninstaller section generation"""

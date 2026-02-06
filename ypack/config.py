@@ -84,9 +84,8 @@ class EnvVarEntry:
 class InstallConfig:
     """Installation configuration"""
     install_dir: str = "$PROGRAMFILES64\\${APP_NAME}"
-    create_desktop_shortcut: bool = True
-    create_start_menu_shortcut: bool = True
-    registry_key: str = "Software\\${APP_NAME}"
+    desktop_shortcut_target: str = ""  # Path to executable for desktop shortcut (e.g. $INSTDIR\\MyApp.exe)
+    start_menu_shortcut_target: str = ""  # Path to executable for start menu shortcut
     registry_entries: List[RegistryEntry] = field(default_factory=list)
     env_vars: List[EnvVarEntry] = field(default_factory=list)
     file_associations: List[FileAssociation] = field(default_factory=list)
@@ -116,12 +115,9 @@ class InstallConfig:
             sysreq = SystemRequirements.from_dict(
                 data.get("system_requirements"))
         return cls(
-            install_dir=data.get(
-                "install_dir", "$PROGRAMFILES64\\${APP_NAME}"),
-            create_desktop_shortcut=data.get("create_desktop_shortcut", True),
-            create_start_menu_shortcut=data.get(
-                "create_start_menu_shortcut", True),
-            registry_key=data.get("registry_key", "Software\\${APP_NAME}"),
+            install_dir=data.get("install_dir", "$PROGRAMFILES64\\${APP_NAME}"),
+            desktop_shortcut_target=data.get("desktop_shortcut_target", ""),
+            start_menu_shortcut_target=data.get("start_menu_shortcut_target", ""),
             registry_entries=entries,
             env_vars=envs,
             file_associations=file_assocs,
