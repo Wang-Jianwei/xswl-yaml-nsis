@@ -117,9 +117,22 @@ def generate_modern_ui(ctx: BuildContext) -> List[str]:
         "; --- Modern UI ---",
         '!include "MUI2.nsh"',
         "",
-        "; UI Pages",
     ]
 
+    # Finish page run checkbox — MUST be defined BEFORE MUI_PAGE_FINISH macro
+    launch = cfg.install.launch_on_finish
+    if launch:
+        path = ctx.resolve(launch)
+        lines.append("; Finish page run (launch on finish)")
+        lines.append(f'!define MUI_FINISHPAGE_RUN "{path}"')
+        label = cfg.install.launch_on_finish_label
+        if label:
+            label_resolved = ctx.resolve(label)
+            lines.append(f'!define MUI_FINISHPAGE_RUN_TEXT "{label_resolved}"')
+        lines.append("")
+
+    # UI Pages
+    lines.append("; UI Pages")
     if cfg.app.license:
         lines.append('!insertmacro MUI_PAGE_LICENSE "${LICENSE_FILE}"')
     else:
@@ -143,16 +156,5 @@ def generate_modern_ui(ctx: BuildContext) -> List[str]:
     for lang in langs:
         lines.append(f'!insertmacro MUI_LANGUAGE "{lang}"')
     lines.append("")
-
-    # Finish page run checkbox
-    launch = cfg.install.launch_on_finish
-    if launch:
-        path = ctx.resolve(launch)
-        lines.append(f'!define MUI_FINISHPAGE_RUN "{path}"')
-        label = cfg.install.launch_on_finish_label
-        if label:
-            label_resolved = ctx.resolve(label)
-            lines.append(f'!define MUI_FINISHPAGE_RUN_TEXT "{label_resolved}"')
-        lines.append("")
 
     return lines
